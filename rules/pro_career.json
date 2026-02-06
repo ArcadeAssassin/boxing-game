@@ -1,0 +1,62 @@
+{
+  "promoters": [
+    "North Star Promotions",
+    "Pinnacle Boxing",
+    "Crown Fight Group",
+    "Liberty Ring Sports"
+  ],
+  "organizations": [
+    {"name": "WBC", "ranking_slots": 40, "sanction_fee_pct": 0.03, "sanction_fee_rank_threshold": 15},
+    {"name": "WBA", "ranking_slots": 40, "sanction_fee_pct": 0.03, "sanction_fee_rank_threshold": 15},
+    {"name": "IBF", "ranking_slots": 40, "sanction_fee_pct": 0.03, "sanction_fee_rank_threshold": 15},
+    {"name": "WBO", "ranking_slots": 40, "sanction_fee_pct": 0.03, "sanction_fee_rank_threshold": 15}
+  ],
+  "turn_pro": {
+    "signing_bonus_min": 1500,
+    "signing_bonus_max": 5000
+  },
+  "economy": {
+    "manager_cut_pct": 0.1,
+    "trainer_cut_pct": 0.1,
+    "camp_cost_pct": 0.08,
+    "commission_pct": 0.06,
+    "popularity_bonus_per_point": 90,
+    "opponent_rating_bonus": 45,
+    "ranking_bonus_per_step": 130
+  },
+  "tiers": [
+    {
+      "name": "prospect",
+      "min_fights": 0,
+      "max_fights": 5,
+      "opponent_rating_min": 58,
+      "opponent_rating_max": 74,
+      "rounds": 6,
+      "purse": {"min": 1800, "max": 5000},
+      "ranking": {"entry_on_win": 38, "win_step": 3, "draw_penalty": 1, "loss_penalty": 4},
+      "popularity": {"win": 2, "draw": 1, "loss": -1}
+    },
+    {
+      "name": "contender",
+      "min_fights": 6,
+      "max_fights": 14,
+      "opponent_rating_min": 70,
+      "opponent_rating_max": 84,
+      "rounds": 8,
+      "purse": {"min": 5000, "max": 14000},
+      "ranking": {"entry_on_win": 30, "win_step": 4, "draw_penalty": 1, "loss_penalty": 3},
+      "popularity": {"win": 3, "draw": 1, "loss": -1}
+    },
+    {
+      "name": "ranked",
+      "min_fights": 15,
+      "max_fights": 999,
+      "opponent_rating_min": 80,
+      "opponent_rating_max": 93,
+      "rounds": 10,
+      "purse": {"min": 14000, "max": 60000},
+      "ranking": {"entry_on_win": 20, "win_step": 5, "draw_penalty": 1, "loss_penalty": 2},
+      "popularity": {"win": 4, "draw": 1, "loss": -1}
+    }
+  ]
+}

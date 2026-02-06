@@ -1,0 +1,50 @@
+{
+  "base_stats": {
+    "power": 58,
+    "speed": 58,
+    "chin": 56,
+    "stamina": 57,
+    "defense": 56,
+    "ring_iq": 55,
+    "footwork": 57,
+    "reach_control": 55,
+    "inside_fighting": 55
+  },
+  "stat_limits": {
+    "min": 20,
+    "max": 95
+  },
+  "height_coefficients": {
+    "power": 0.15,
+    "speed": -0.25,
+    "chin": 0.05,
+    "stamina": -0.05,
+    "defense": 0.1,
+    "ring_iq": 0.0,
+    "footwork": -0.1,
+    "reach_control": 0.65,
+    "inside_fighting": -0.45
+  },
+  "weight_coefficients": {
+    "power": 4.8,
+    "speed": -4.2,
+    "chin": 3.9,
+    "stamina": -2.4,
+    "defense": 0.6,
+    "ring_iq": 0.0,
+    "footwork": -2.1,
+    "reach_control": 0.4,
+    "inside_fighting": 2.2
+  },
+  "training_focuses": [
+    "power",
+    "speed",
+    "chin",
+    "stamina",
+    "defense",
+    "ring_iq",
+    "footwork",
+    "reach_control",
+    "inside_fighting"
+  ]
+}

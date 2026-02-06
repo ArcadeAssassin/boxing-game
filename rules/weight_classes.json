@@ -1,0 +1,21 @@
+{
+  "classes": [
+    {"name": "minimumweight", "min_lbs": 102, "max_lbs": 105, "avg_height_in": 63},
+    {"name": "light_flyweight", "min_lbs": 106, "max_lbs": 108, "avg_height_in": 64},
+    {"name": "flyweight", "min_lbs": 109, "max_lbs": 112, "avg_height_in": 65},
+    {"name": "super_flyweight", "min_lbs": 113, "max_lbs": 115, "avg_height_in": 66},
+    {"name": "bantamweight", "min_lbs": 116, "max_lbs": 118, "avg_height_in": 67},
+    {"name": "super_bantamweight", "min_lbs": 119, "max_lbs": 122, "avg_height_in": 67},
+    {"name": "featherweight", "min_lbs": 123, "max_lbs": 126, "avg_height_in": 68},
+    {"name": "super_featherweight", "min_lbs": 127, "max_lbs": 130, "avg_height_in": 69},
+    {"name": "lightweight", "min_lbs": 131, "max_lbs": 135, "avg_height_in": 69},
+    {"name": "super_lightweight", "min_lbs": 136, "max_lbs": 140, "avg_height_in": 70},
+    {"name": "welterweight", "min_lbs": 141, "max_lbs": 147, "avg_height_in": 70},
+    {"name": "super_welterweight", "min_lbs": 148, "max_lbs": 154, "avg_height_in": 71},
+    {"name": "middleweight", "min_lbs": 155, "max_lbs": 160, "avg_height_in": 72},
+    {"name": "super_middleweight", "min_lbs": 161, "max_lbs": 168, "avg_height_in": 73},
+    {"name": "light_heavyweight", "min_lbs": 169, "max_lbs": 175, "avg_height_in": 74},
+    {"name": "cruiserweight", "min_lbs": 176, "max_lbs": 200, "avg_height_in": 75},
+    {"name": "heavyweight", "min_lbs": 201, "max_lbs": 300, "avg_height_in": 77}
+  ]
+}

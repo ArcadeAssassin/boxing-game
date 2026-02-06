@@ -1,0 +1,36 @@
+{
+  "tiers": [
+    {
+      "name": "novice",
+      "min_fights": 0,
+      "max_fights": 5,
+      "opponent_rating_min": 45,
+      "opponent_rating_max": 58,
+      "rounds": 3,
+      "points": {"win": 8, "draw": 3, "loss": 1, "ko_bonus": 2}
+    },
+    {
+      "name": "regional",
+      "min_fights": 6,
+      "max_fights": 12,
+      "opponent_rating_min": 56,
+      "opponent_rating_max": 68,
+      "rounds": 3,
+      "points": {"win": 11, "draw": 4, "loss": 2, "ko_bonus": 2}
+    },
+    {
+      "name": "national",
+      "min_fights": 13,
+      "max_fights": 999,
+      "opponent_rating_min": 66,
+      "opponent_rating_max": 80,
+      "rounds": 3,
+      "points": {"win": 14, "draw": 5, "loss": 3, "ko_bonus": 3}
+    }
+  ],
+  "pro_readiness": {
+    "min_age": 19,
+    "min_fights": 18,
+    "min_points": 170
+  }
+}

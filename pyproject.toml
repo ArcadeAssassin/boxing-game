@@ -1,0 +1,8 @@
+[project]
+name = "boxing-game"
+version = "0.1.0"
+description = "Text-based boxing career simulation"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

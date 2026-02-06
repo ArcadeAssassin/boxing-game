@@ -1,0 +1,42 @@
+{
+  "amateur": {
+    "rounds": 3,
+    "base_ko_chance": 0.02,
+    "max_ko_chance": 0.35,
+    "swing_factor": 7.0,
+    "judge_noise": 1.2,
+    "stamina_decay_per_round": 1,
+    "fatigue_penalty_per_point": 0.5,
+    "style_weights": {
+      "power": 0.18,
+      "speed": 0.16,
+      "chin": 0.12,
+      "stamina": 0.14,
+      "defense": 0.12,
+      "ring_iq": 0.1,
+      "footwork": 0.08,
+      "reach_control": 0.06,
+      "inside_fighting": 0.04
+    }
+  },
+  "pro": {
+    "rounds": 8,
+    "base_ko_chance": 0.035,
+    "max_ko_chance": 0.48,
+    "swing_factor": 6.2,
+    "judge_noise": 1.0,
+    "stamina_decay_per_round": 1,
+    "fatigue_penalty_per_point": 0.55,
+    "style_weights": {
+      "power": 0.2,
+      "speed": 0.13,
+      "chin": 0.14,
+      "stamina": 0.16,
+      "defense": 0.12,
+      "ring_iq": 0.1,
+      "footwork": 0.06,
+      "reach_control": 0.06,
+      "inside_fighting": 0.03
+    }
+  }
+}

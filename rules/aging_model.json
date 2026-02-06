@@ -1,0 +1,9 @@
+{
+  "stat_limits": {"min": 20, "max": 95},
+  "age_brackets": [
+    {"min_age": 19, "max_age": 29, "stat_deltas": {}},
+    {"min_age": 30, "max_age": 32, "stat_deltas": {"speed": -1, "footwork": -1, "ring_iq": 1}},
+    {"min_age": 33, "max_age": 35, "stat_deltas": {"speed": -1, "stamina": -1, "footwork": -1, "chin": -1, "ring_iq": 1}},
+    {"min_age": 36, "max_age": 50, "stat_deltas": {"speed": -2, "stamina": -2, "footwork": -2, "chin": -1, "power": -1, "ring_iq": 1}}
+  ]
+}
