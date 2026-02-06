@@ -1,13 +1,23 @@
+"""Experience progression system.
+
+Manages XP gain from fights, level/title resolution, and in-fight
+experience bonuses.  Legacy saves without ``experience_points`` are
+backfilled from total career fights.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 
 from boxing_game.models import Boxer, CareerRecord, FightResult, Opponent
 from boxing_game.rules_registry import load_rule_set
+from boxing_game.utils import clamp_int
 
 
 @dataclass(frozen=True)
 class ExperienceProfile:
+    """Snapshot of a boxer's current experience level and fight bonus."""
+
     points: int
     level: int
     title: str
@@ -15,15 +25,16 @@ class ExperienceProfile:
     next_level_points: int | None
 
 
-def _clamp_int(value: int, minimum: int, maximum: int) -> int:
-    return max(minimum, min(maximum, value))
-
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 def _total_record_fights(record: CareerRecord) -> int:
     return max(0, record.wins + record.losses + record.draws)
 
 
 def total_career_fights(boxer: Boxer, pro_record: CareerRecord | None = None) -> int:
+    """Return the total number of career fights (amateur + pro)."""
     total = _total_record_fights(boxer.record)
     if pro_record is not None:
         total += _total_record_fights(pro_record)
@@ -31,6 +42,7 @@ def total_career_fights(boxer: Boxer, pro_record: CareerRecord | None = None) ->
 
 
 def infer_points_from_total_fights(total_fights: int) -> int:
+    """Estimate XP for legacy saves that lack ``experience_points``."""
     if total_fights <= 0:
         return 0
     base = int(load_rule_set("experience_model")["base_points_per_fight"]["amateur"])
@@ -51,7 +63,12 @@ def _sorted_levels() -> list[dict[str, str | int]]:
     )
 
 
+# ---------------------------------------------------------------------------
+# Profile resolution
+# ---------------------------------------------------------------------------
+
 def profile_from_points(points: int) -> ExperienceProfile:
+    """Resolve a raw XP value into a full ``ExperienceProfile``."""
     safe_points = max(0, int(points))
     levels = _sorted_levels()
     if not levels:
@@ -89,7 +106,11 @@ def profile_from_points(points: int) -> ExperienceProfile:
     )
 
 
-def boxer_experience_profile(boxer: Boxer, pro_record: CareerRecord | None = None) -> ExperienceProfile:
+def boxer_experience_profile(
+    boxer: Boxer,
+    pro_record: CareerRecord | None = None,
+) -> ExperienceProfile:
+    """Return the experience profile for *boxer*, inferring XP if needed."""
     points = max(0, int(boxer.experience_points))
     if points == 0:
         fights = total_career_fights(boxer, pro_record=pro_record)
@@ -99,10 +120,15 @@ def boxer_experience_profile(boxer: Boxer, pro_record: CareerRecord | None = Non
 
 
 def opponent_experience_profile(opponent: Opponent) -> ExperienceProfile:
+    """Return an inferred experience profile for an NPC opponent."""
     fights = _total_record_fights(opponent.record)
     points = infer_points_from_total_fights(fights)
     return profile_from_points(points)
 
+
+# ---------------------------------------------------------------------------
+# XP gain
+# ---------------------------------------------------------------------------
 
 def fight_experience_gain(
     *,
@@ -111,14 +137,13 @@ def fight_experience_gain(
     opponent_rating: int,
     result: FightResult,
 ) -> int:
+    """Calculate XP gained from a single fight result."""
     cfg = load_rule_set("experience_model")
     base_by_stage = {str(k): int(v) for k, v in cfg["base_points_per_fight"].items()}
     if stage not in base_by_stage:
         raise ValueError(f"Unknown experience stage: {stage}")
 
-    result_points = {
-        str(key): int(value) for key, value in cfg["result_points"].items()
-    }
+    result_points = {str(key): int(value) for key, value in cfg["result_points"].items()}
     if result.winner == boxer_name:
         outcome_key = "win"
     elif result.winner == "Draw":
@@ -136,10 +161,11 @@ def fight_experience_gain(
         gain += ko_bonus
 
     max_gain = int(cfg["max_gain_per_fight"])
-    return _clamp_int(gain, 1, max_gain)
+    return clamp_int(gain, 1, max_gain)
 
 
 def add_experience_points(boxer: Boxer, gain: int) -> int:
+    """Add *gain* XP to *boxer* and return the applied amount."""
     applied_gain = max(0, int(gain))
     boxer.experience_points = max(0, int(boxer.experience_points) + applied_gain)
     return applied_gain

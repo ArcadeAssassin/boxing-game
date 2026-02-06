@@ -1,20 +1,30 @@
+"""Post-fight fatigue/injury impact calculator.
+
+Converts a fight result (outcome, method, rounds) into concrete
+fatigue and injury-risk gains using configurable multipliers from
+``rules/fight_model.json``.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 
 from boxing_game.models import FightResult
 from boxing_game.rules_registry import load_rule_set
+from boxing_game.utils import clamp_float
 
 
 @dataclass(frozen=True)
 class PostFightImpact:
+    """Wear values to apply to a boxer after a fight."""
+
     fatigue_gain: int
     injury_risk_gain: int
 
 
-def _clamp_float(value: float, minimum: float, maximum: float) -> float:
-    return max(minimum, min(maximum, value))
-
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
 
 def _outcome_key(boxer_name: str, result: FightResult) -> str:
     if result.winner == boxer_name:
@@ -34,11 +44,9 @@ def _multiplier(
     section_payload = config.get(section, {})
     if not isinstance(section_payload, dict):
         return 1.0
-
     outcome_payload = section_payload.get(outcome_key, {})
     if not isinstance(outcome_payload, dict):
         return 1.0
-
     try:
         return float(outcome_payload.get(stat_key, 1.0))
     except (TypeError, ValueError):
@@ -51,12 +59,12 @@ def _rounds_factor(
     rounds_scheduled: int,
     rounds_weight: float,
 ) -> float:
-    completion_ratio = _clamp_float(
+    completion_ratio = clamp_float(
         float(max(0, rounds_completed)) / float(max(1, rounds_scheduled)),
         0.0,
         1.0,
     )
-    weight = _clamp_float(rounds_weight, 0.0, 1.0)
+    weight = clamp_float(rounds_weight, 0.0, 1.0)
     return (1.0 - weight) + (completion_ratio * weight)
 
 
@@ -66,6 +74,10 @@ def _rounded_gain(value: float, *, base_gain: int) -> int:
     return max(1, int(round(value)))
 
 
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
 def calculate_post_fight_impact(
     *,
     stage: str,
@@ -73,6 +85,11 @@ def calculate_post_fight_impact(
     result: FightResult,
     rounds_scheduled: int,
 ) -> PostFightImpact:
+    """Calculate fatigue and injury-risk gains from a completed fight.
+
+    Uses outcome multipliers, stoppage multipliers, and round-completion
+    factor from the fight model rules.
+    """
     if rounds_scheduled < 1:
         raise ValueError("rounds_scheduled must be >= 1.")
 
@@ -98,36 +115,16 @@ def calculate_post_fight_impact(
     )
 
     fatigue = float(base_fatigue)
-    fatigue *= _multiplier(
-        impact_cfg,
-        section="outcome_multipliers",
-        outcome_key=outcome,
-        stat_key="fatigue",
-    )
+    fatigue *= _multiplier(impact_cfg, section="outcome_multipliers", outcome_key=outcome, stat_key="fatigue")
     fatigue *= rounds_factor
 
     injury = float(base_injury)
-    injury *= _multiplier(
-        impact_cfg,
-        section="outcome_multipliers",
-        outcome_key=outcome,
-        stat_key="injury",
-    )
+    injury *= _multiplier(impact_cfg, section="outcome_multipliers", outcome_key=outcome, stat_key="injury")
     injury *= rounds_factor
 
     if result.method in {"KO", "TKO"}:
-        fatigue *= _multiplier(
-            impact_cfg,
-            section="stoppage_multipliers",
-            outcome_key=outcome,
-            stat_key="fatigue",
-        )
-        injury *= _multiplier(
-            impact_cfg,
-            section="stoppage_multipliers",
-            outcome_key=outcome,
-            stat_key="injury",
-        )
+        fatigue *= _multiplier(impact_cfg, section="stoppage_multipliers", outcome_key=outcome, stat_key="fatigue")
+        injury *= _multiplier(impact_cfg, section="stoppage_multipliers", outcome_key=outcome, stat_key="injury")
 
     return PostFightImpact(
         fatigue_gain=_rounded_gain(fatigue, base_gain=base_fatigue),

@@ -1,8 +1,16 @@
+"""Pro career management: rankings, opponents, purses, titles, and P4P.
+
+The largest game-logic module, handling the transition to pro, organisation
+rankings, opponent generation, purse calculation, sanctioning-body logic,
+lineal/org title tracking, division changes, and pound-for-pound rankings.
+"""
+
 from __future__ import annotations
 
 import random
 from dataclasses import dataclass
 
+from boxing_game.constants import MAX_FATIGUE, MAX_INJURY_RISK
 from boxing_game.models import (
     CareerRecord,
     CareerState,
@@ -20,10 +28,12 @@ from boxing_game.modules.pro_spending import adjusted_fatigue_gain, adjusted_inj
 from boxing_game.modules.rating_engine import boxer_overall_rating
 from boxing_game.modules.weight_class_engine import WeightClass, classify_weight, list_weight_classes
 from boxing_game.rules_registry import load_rule_set
+from boxing_game.utils import clamp_probability, clamp_stat
 
 
 @dataclass(frozen=True)
 class RankingEntry:
+    """A single row in an organisation's divisional rankings."""
     rank: int
     name: str
     rating: int
@@ -40,6 +50,7 @@ class RankingEntry:
 
 @dataclass(frozen=True)
 class PoundForPoundEntry:
+    """A single row in the pound-for-pound rankings."""
     rank: int
     name: str
     score: float
@@ -50,10 +61,6 @@ class PoundForPoundEntry:
     draws: int
     is_lineal_champion: bool = False
     is_player: bool = False
-
-
-def _clamp_stat(value: int) -> int:
-    return max(20, min(95, value))
 
 
 def _mean_stat(stats: Stats) -> float:
@@ -70,14 +77,6 @@ def _organization_config(name: str) -> dict:
         if str(item["name"]) == name:
             return item
     raise ValueError(f"Unknown organization: {name}")
-
-
-def _clamp_probability(value: object, default: float) -> float:
-    try:
-        numeric = float(value)
-    except (TypeError, ValueError):
-        return default
-    return max(0.0, min(1.0, numeric))
 
 
 def _sanctioning_policy() -> dict[str, float | int | bool | dict[str, float]]:
@@ -109,30 +108,30 @@ def _sanctioning_policy() -> dict[str, float | int | bool | dict[str, float]]:
 
     return {
         "include_focus_org_always": bool(raw.get("include_focus_org_always", True)),
-        "cross_body_top_window_prob": _clamp_probability(
+        "cross_body_top_window_prob": clamp_probability(
             raw.get("cross_body_top_window_prob", 0.78),
             0.78,
         ),
-        "cross_body_elite_prob": _clamp_probability(
+        "cross_body_elite_prob": clamp_probability(
             raw.get("cross_body_elite_prob", 0.56),
             0.56,
         ),
-        "cross_body_rank_gap_prob": _clamp_probability(
+        "cross_body_rank_gap_prob": clamp_probability(
             raw.get("cross_body_rank_gap_prob", 0.35),
             0.35,
         ),
-        "cross_body_single_top10_prob": _clamp_probability(
+        "cross_body_single_top10_prob": clamp_probability(
             raw.get("cross_body_single_top10_prob", 0.3),
             0.3,
         ),
         "cross_body_rank_window": max(1, rank_window),
         "cross_body_elite_cutoff": max(1, elite_cutoff),
         "cross_body_rank_gap_max": max(1, rank_gap_max),
-        "opponent_cross_rank_presence_prob": _clamp_probability(
+        "opponent_cross_rank_presence_prob": clamp_probability(
             raw.get("opponent_cross_rank_presence_prob", 0.68),
             0.68,
         ),
-        "opponent_unranked_pool_rank_chance": _clamp_probability(
+        "opponent_unranked_pool_rank_chance": clamp_probability(
             raw.get("opponent_unranked_pool_rank_chance", 0.2),
             0.2,
         ),
@@ -711,7 +710,7 @@ def _blended_stats_for_division(state: CareerState, target_weight_class: WeightC
     current_stats = boxer.stats.to_dict()
     merged: dict[str, int] = {}
     for key, value in current_stats.items():
-        merged[key] = _clamp_stat(int(round((value * 0.72) + (base_stats[key] * 0.28))))
+        merged[key] = clamp_stat(int(round((value * 0.72) + (base_stats[key] * 0.28))))
     return merged
 
 
@@ -777,18 +776,18 @@ def change_division(
 
     merged_stats = _blended_stats_for_division(state, target_weight_class)
     if moving_down:
-        merged_stats["stamina"] = _clamp_stat(merged_stats["stamina"] - 2)
-        merged_stats["chin"] = _clamp_stat(merged_stats["chin"] - 2)
-        merged_stats["power"] = _clamp_stat(merged_stats["power"] - 1)
-        merged_stats["speed"] = _clamp_stat(merged_stats["speed"] + 1)
+        merged_stats["stamina"] = clamp_stat(merged_stats["stamina"] - 2)
+        merged_stats["chin"] = clamp_stat(merged_stats["chin"] - 2)
+        merged_stats["power"] = clamp_stat(merged_stats["power"] - 1)
+        merged_stats["speed"] = clamp_stat(merged_stats["speed"] + 1)
 
         fatigue_gain = 5 + max(1, cut_lbs // 2)
         injury_gain = 14 + (cut_lbs * 2)
     else:
-        merged_stats["power"] = _clamp_stat(merged_stats["power"] + 1)
-        merged_stats["chin"] = _clamp_stat(merged_stats["chin"] + 1)
-        merged_stats["speed"] = _clamp_stat(merged_stats["speed"] - 1)
-        merged_stats["footwork"] = _clamp_stat(merged_stats["footwork"] - 1)
+        merged_stats["power"] = clamp_stat(merged_stats["power"] + 1)
+        merged_stats["chin"] = clamp_stat(merged_stats["chin"] + 1)
+        merged_stats["speed"] = clamp_stat(merged_stats["speed"] - 1)
+        merged_stats["footwork"] = clamp_stat(merged_stats["footwork"] - 1)
 
         gain_lbs = max(0, new_weight - current_weight)
         fatigue_gain = 2 + max(0, gain_lbs // 8)
@@ -797,8 +796,8 @@ def change_division(
     state.boxer.stats = Stats.from_dict(merged_stats)
     state.boxer.profile.weight_lbs = new_weight
     state.boxer.division = target
-    state.boxer.fatigue = min(12, state.boxer.fatigue + fatigue_gain)
-    state.boxer.injury_risk = min(100, state.boxer.injury_risk + injury_gain)
+    state.boxer.fatigue = min(MAX_FATIGUE, state.boxer.fatigue + fatigue_gain)
+    state.boxer.injury_risk = min(MAX_INJURY_RISK, state.boxer.injury_risk + injury_gain)
 
     state.pro_career.division_changes += 1
     if target not in state.pro_career.divisions_fought:
@@ -1119,7 +1118,7 @@ def generate_pro_opponent(state: CareerState, rng: random.Random | None = None) 
         weight_class=weight_class,
     )
     shift = int(round((rating - _mean_stat(base_stats)) * 0.6))
-    adjusted = {k: _clamp_stat(v + shift) for k, v in base_stats.to_dict().items()}
+    adjusted = {k: clamp_stat(v + shift) for k, v in base_stats.to_dict().items()}
     organization_ranks = _build_opponent_org_ranks(
         state=state,
         focus_org=focus_org,
@@ -1467,8 +1466,8 @@ def apply_pro_fight_result(
     )
     fatigue_gain = adjusted_fatigue_gain(state, impact.fatigue_gain)
     injury_gain = adjusted_injury_risk_gain(state, impact.injury_risk_gain)
-    state.boxer.fatigue = min(12, state.boxer.fatigue + fatigue_gain)
-    state.boxer.injury_risk = min(100, state.boxer.injury_risk + injury_gain)
+    state.boxer.fatigue = min(MAX_FATIGUE, state.boxer.fatigue + fatigue_gain)
+    state.boxer.injury_risk = min(MAX_INJURY_RISK, state.boxer.injury_risk + injury_gain)
 
     rank_updates: dict[str, int | None] = {}
     for org_name in sanctioned_bodies:

@@ -1,4 +1,4 @@
-"""Boxing game package."""
+"""Text-based boxing career game with CLI and GUI frontends."""
 
 from .game import run
 

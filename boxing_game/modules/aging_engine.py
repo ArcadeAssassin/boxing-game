@@ -1,16 +1,16 @@
+"""Deterministic boxer aging-profile generation.
+
+Generates a stable ``AgingProfile`` from boxer identity and body metrics.
+The profile determines peak age, decline onset, decline severity, and
+ring-IQ growth factor for the career-clock birthday system.
+"""
+
 from __future__ import annotations
 
 import random
 
 from boxing_game.models import AgingProfile
-
-
-def _clamp_int(value: int, minimum: int, maximum: int) -> int:
-    return max(minimum, min(maximum, value))
-
-
-def _clamp_float(value: float, minimum: float, maximum: float) -> float:
-    return max(minimum, min(maximum, value))
+from boxing_game.utils import clamp_float, clamp_int
 
 
 def generate_aging_profile(
@@ -20,7 +20,11 @@ def generate_aging_profile(
     height_inches: int,
     weight_lbs: int,
 ) -> AgingProfile:
-    # Deterministic seed so profile is stable across runs and legacy migrations.
+    """Create a deterministic aging profile seeded from identity/body metrics.
+
+    The seed ensures the same boxer always receives the same profile
+    regardless of when or how many times the function is called.
+    """
     seed = f"{name.strip().lower()}:{stance.strip().lower()}:{height_inches}:{weight_lbs}"
     randomizer = random.Random(seed)
 
@@ -34,17 +38,18 @@ def generate_aging_profile(
     if height_inches >= 74:
         frame_bias += 1
 
-    peak_age = randomizer.randint(26, 30) + weight_bias + frame_bias
-    peak_age = _clamp_int(peak_age, 24, 34)
-
-    decline_onset_age = peak_age + randomizer.randint(1, 3)
-    decline_onset_age = _clamp_int(decline_onset_age, peak_age, 40)
-
-    decline_severity = round(randomizer.uniform(0.85, 1.18), 3)
-    iq_growth_factor = round(randomizer.uniform(0.9, 1.2), 3)
-
-    decline_severity = round(_clamp_float(decline_severity, 0.7, 1.4), 3)
-    iq_growth_factor = round(_clamp_float(iq_growth_factor, 0.75, 1.35), 3)
+    peak_age = clamp_int(
+        randomizer.randint(26, 30) + weight_bias + frame_bias, 24, 34,
+    )
+    decline_onset_age = clamp_int(
+        peak_age + randomizer.randint(1, 3), peak_age, 40,
+    )
+    decline_severity = round(
+        clamp_float(randomizer.uniform(0.85, 1.18), 0.7, 1.4), 3,
+    )
+    iq_growth_factor = round(
+        clamp_float(randomizer.uniform(0.9, 1.2), 0.75, 1.35), 3,
+    )
 
     return AgingProfile(
         peak_age=peak_age,

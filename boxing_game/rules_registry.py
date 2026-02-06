@@ -1,3 +1,9 @@
+"""Rule-file loading with LRU caching.
+
+Reads JSON rule sets from the ``rules/`` directory and caches them for
+the lifetime of the process.
+"""
+
 from __future__ import annotations
 
 import json
@@ -11,6 +17,7 @@ RULES_DIR = PROJECT_ROOT / "rules"
 
 @lru_cache(maxsize=32)
 def load_rule_set(name: str) -> dict[str, Any]:
+    """Load and cache a JSON rule set by name (without ``.json`` extension)."""
     path = RULES_DIR / f"{name}.json"
     if not path.exists():
         raise FileNotFoundError(f"Rule set not found: {path}")

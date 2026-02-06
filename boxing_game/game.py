@@ -1,8 +1,15 @@
+"""CLI orchestration for the text-based boxing career game.
+
+Provides the interactive command-line interface: menus, input prompts,
+career loop, and fight/training/save actions.
+"""
+
 from __future__ import annotations
 
 import random
 from pathlib import Path
 
+from boxing_game.constants import ORGANIZATION_NAMES
 from boxing_game.models import CareerState
 from boxing_game.modules.amateur_circuit import (
     apply_fight_result,
@@ -159,7 +166,7 @@ def _render_stats(state: CareerState) -> None:
             label = f"#{rank}" if rank is not None else "Unranked"
             print(f"  - {org_name}: {label}")
         print("Organization Champions (current division):")
-        for org_name in ["WBC", "WBA", "IBF", "WBO"]:
+        for org_name in ORGANIZATION_NAMES:
             champion = state.pro_career.organization_champions.get(org_name, {}).get(
                 state.boxer.division
             )

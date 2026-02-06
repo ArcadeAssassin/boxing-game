@@ -1,3 +1,10 @@
+"""In-game retirement system.
+
+Evaluates retirement probability each month based on age, performance,
+injury, fatigue, and championship protection.  Configurable via
+``rules/retirement_model.json``.
+"""
+
 from __future__ import annotations
 
 import random
@@ -5,10 +12,13 @@ from dataclasses import dataclass
 
 from boxing_game.models import CareerState
 from boxing_game.rules_registry import load_rule_set
+from boxing_game.utils import clamp_float
 
 
 @dataclass(frozen=True)
 class RetirementEvaluation:
+    """Result of a monthly retirement check."""
+
     is_retired: bool
     newly_retired: bool
     forced: bool
@@ -17,9 +27,9 @@ class RetirementEvaluation:
     reason: str
 
 
-def _clamp(value: float, minimum: float, maximum: float) -> float:
-    return max(minimum, min(maximum, value))
-
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
 
 def _rules() -> dict:
     return load_rule_set("retirement_model")
@@ -34,9 +44,7 @@ def _base_age_chance(age: int) -> float:
 
 def _active_record(state: CareerState) -> tuple[int, int, int, int, float]:
     record = state.pro_career.record if state.pro_career.is_active else state.boxer.record
-    wins = int(record.wins)
-    losses = int(record.losses)
-    draws = int(record.draws)
+    wins, losses, draws = int(record.wins), int(record.losses), int(record.draws)
     total = wins + losses + draws
     win_rate = 0.0 if total == 0 else (wins / total)
     return wins, losses, draws, total, win_rate
@@ -78,7 +86,16 @@ def _best_rank(state: CareerState) -> int | None:
     return min(int(rank) for rank in ranks)
 
 
+# ---------------------------------------------------------------------------
+# Probability calculation
+# ---------------------------------------------------------------------------
+
 def retirement_chance(state: CareerState) -> float:
+    """Return the probability that the boxer retires this month.
+
+    Accounts for age bands, performance modifiers, injury/fatigue, and
+    championship protections.
+    """
     if state.is_retired:
         return 1.0
 
@@ -92,8 +109,22 @@ def retirement_chance(state: CareerState) -> float:
     if chance <= 0.0:
         return 0.0
 
+    chance = _apply_performance_modifiers(state, chance, rules)
+    chance = _apply_protection_modifiers(state, chance, rules)
+
+    bounds = rules["chance_bounds"]
+    return clamp_float(chance, float(bounds["min"]), float(bounds["max"]))
+
+
+def _apply_performance_modifiers(
+    state: CareerState,
+    chance: float,
+    rules: dict,
+) -> float:
+    """Adjust retirement chance based on win-rate, loss streaks, and health."""
     perf = rules["performance"]
     _, _, _, total_fights, win_rate = _active_record(state)
+
     if total_fights >= int(perf["sample_fights_min"]):
         if win_rate < float(perf["win_rate_low"]):
             chance += float(perf["mod_low"])
@@ -119,24 +150,39 @@ def retirement_chance(state: CareerState) -> float:
     if state.boxer.fatigue > fatigue_threshold:
         chance += (state.boxer.fatigue - fatigue_threshold) * float(perf["fatigue_per_point"])
 
-    if state.pro_career.is_active:
-        if _has_lineal_title(state):
-            chance -= float(perf["champion_protection"])
+    return chance
 
-        best_rank = _best_rank(state)
-        rank_cutoff = int(perf["top_rank_cutoff"])
-        if best_rank is not None and best_rank <= rank_cutoff:
-            steps = rank_cutoff - best_rank + 1
-            chance -= steps * float(perf["top_rank_protection_per_step"])
 
-        pro_record = state.pro_career.record
-        pro_total = int(pro_record.wins + pro_record.losses + pro_record.draws)
-        if pro_total <= int(perf["early_career_fights"]) and age < 35:
-            chance -= float(perf["early_career_protection"])
+def _apply_protection_modifiers(
+    state: CareerState,
+    chance: float,
+    rules: dict,
+) -> float:
+    """Reduce retirement chance for champions and early-career fighters."""
+    if not state.pro_career.is_active:
+        return chance
 
-    bounds = rules["chance_bounds"]
-    return _clamp(chance, float(bounds["min"]), float(bounds["max"]))
+    perf = rules["performance"]
+    if _has_lineal_title(state):
+        chance -= float(perf["champion_protection"])
 
+    best_rank = _best_rank(state)
+    rank_cutoff = int(perf["top_rank_cutoff"])
+    if best_rank is not None and best_rank <= rank_cutoff:
+        steps = rank_cutoff - best_rank + 1
+        chance -= steps * float(perf["top_rank_protection_per_step"])
+
+    pro_record = state.pro_career.record
+    pro_total = int(pro_record.wins + pro_record.losses + pro_record.draws)
+    if pro_total <= int(perf["early_career_fights"]) and int(state.boxer.profile.age) < 35:
+        chance -= float(perf["early_career_protection"])
+
+    return chance
+
+
+# ---------------------------------------------------------------------------
+# Retirement reason formatting
+# ---------------------------------------------------------------------------
 
 def _retirement_reason(state: CareerState, *, forced: bool) -> str:
     age = state.boxer.profile.age
@@ -158,19 +204,25 @@ def _retirement_reason(state: CareerState, *, forced: bool) -> str:
     )
 
 
+# ---------------------------------------------------------------------------
+# Public evaluation
+# ---------------------------------------------------------------------------
+
 def evaluate_retirement(
     state: CareerState,
     *,
     rng: random.Random | None = None,
 ) -> RetirementEvaluation:
+    """Evaluate whether *state*'s boxer retires this month.
+
+    Returns a ``RetirementEvaluation`` indicating the outcome.  Side
+    effect: mutates ``state`` to mark the boxer as retired when
+    the roll triggers retirement.
+    """
     if state.is_retired:
         return RetirementEvaluation(
-            is_retired=True,
-            newly_retired=False,
-            forced=False,
-            chance=1.0,
-            roll=None,
-            reason=state.retirement_reason,
+            is_retired=True, newly_retired=False, forced=False,
+            chance=1.0, roll=None, reason=state.retirement_reason,
         )
 
     age = int(state.boxer.profile.age)
@@ -181,23 +233,15 @@ def evaluate_retirement(
         state.retirement_age = age
         state.retirement_reason = reason
         return RetirementEvaluation(
-            is_retired=True,
-            newly_retired=True,
-            forced=True,
-            chance=1.0,
-            roll=None,
-            reason=reason,
+            is_retired=True, newly_retired=True, forced=True,
+            chance=1.0, roll=None, reason=reason,
         )
 
     chance = retirement_chance(state)
     if chance <= 0.0:
         return RetirementEvaluation(
-            is_retired=False,
-            newly_retired=False,
-            forced=False,
-            chance=0.0,
-            roll=None,
-            reason="",
+            is_retired=False, newly_retired=False, forced=False,
+            chance=0.0, roll=None, reason="",
         )
 
     randomizer = rng or random.Random()
@@ -208,19 +252,11 @@ def evaluate_retirement(
         state.retirement_age = age
         state.retirement_reason = reason
         return RetirementEvaluation(
-            is_retired=True,
-            newly_retired=True,
-            forced=False,
-            chance=chance,
-            roll=roll,
-            reason=reason,
+            is_retired=True, newly_retired=True, forced=False,
+            chance=chance, roll=roll, reason=reason,
         )
 
     return RetirementEvaluation(
-        is_retired=False,
-        newly_retired=False,
-        forced=False,
-        chance=chance,
-        roll=roll,
-        reason="",
+        is_retired=False, newly_retired=False, forced=False,
+        chance=chance, roll=roll, reason="",
     )

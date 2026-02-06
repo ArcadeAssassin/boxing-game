@@ -1,3 +1,9 @@
+"""Desktop GUI orchestration (PySide6).
+
+Provides a full windowed interface for career management including
+boxer creation, fight offers, rankings, save management, and world news.
+"""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -46,6 +52,7 @@ except ModuleNotFoundError as exc:  # pragma: no cover
         "python3 -m pip install --target ./.vendor PySide6"
     ) from exc
 
+from boxing_game.constants import ORGANIZATION_NAMES
 from boxing_game.models import CareerState
 from boxing_game.modules.amateur_circuit import (
     apply_fight_result,
@@ -372,7 +379,7 @@ class BoxingGameWindow(QMainWindow):
         controls = QHBoxLayout()
         controls.setSpacing(8)
         self.rankings_org_combo = QComboBox()
-        self.rankings_org_combo.addItems(["WBC", "WBA", "IBF", "WBO", "P4P"])
+        self.rankings_org_combo.addItems([*ORGANIZATION_NAMES, "P4P"])
         self.rankings_org_combo.currentTextChanged.connect(self._refresh_rankings_page)
 
         refresh_button = QPushButton("Refresh")
@@ -516,6 +523,22 @@ class BoxingGameWindow(QMainWindow):
 
     def _append_world_news(self, message: str) -> None:
         self.world_news_view.appendPlainText(message)
+
+    def _update_action_buttons(
+        self, *, is_pro: bool, is_retired: bool, is_pro_ready: bool,
+    ) -> None:
+        """Enable/disable all career-page action buttons based on state."""
+        can_act = not is_retired
+        self.amateur_fight_button.setEnabled(can_act and not is_pro)
+        self.turn_pro_button.setEnabled(can_act and not is_pro and is_pro_ready)
+        self.pro_fight_button.setEnabled(can_act and is_pro)
+        self.change_division_button.setEnabled(can_act and is_pro)
+        self.special_camp_button.setEnabled(can_act and is_pro)
+        self.medical_button.setEnabled(can_act and is_pro)
+        self.staff_button.setEnabled(can_act and is_pro)
+        self.rest_button.setEnabled(can_act)
+        for button in self.training_focus_buttons.values():
+            button.setEnabled(can_act)
 
     def _guard_retired_action(self, action_label: str) -> bool:
         if self.state is None or not self.state.is_retired:
@@ -1454,28 +1477,7 @@ class BoxingGameWindow(QMainWindow):
         readiness = pro_readiness_status(self.state)
         pro_ready_flag = "Yes" if readiness.is_ready else "No"
         is_retired = self.state.is_retired
-        self.amateur_fight_button.setEnabled(not is_pro)
-        self.turn_pro_button.setEnabled((not is_pro) and readiness.is_ready)
-        self.pro_fight_button.setEnabled(is_pro)
-        self.change_division_button.setEnabled(is_pro)
-        self.special_camp_button.setEnabled(is_pro)
-        self.medical_button.setEnabled(is_pro)
-        self.staff_button.setEnabled(is_pro)
-        self.rest_button.setEnabled(True)
-        for button in self.training_focus_buttons.values():
-            button.setEnabled(True)
-
-        if is_retired:
-            self.amateur_fight_button.setEnabled(False)
-            self.turn_pro_button.setEnabled(False)
-            self.pro_fight_button.setEnabled(False)
-            self.change_division_button.setEnabled(False)
-            self.special_camp_button.setEnabled(False)
-            self.medical_button.setEnabled(False)
-            self.staff_button.setEnabled(False)
-            self.rest_button.setEnabled(False)
-            for button in self.training_focus_buttons.values():
-                button.setEnabled(False)
+        self._update_action_buttons(is_pro=is_pro, is_retired=is_retired, is_pro_ready=readiness.is_ready)
 
         self.career_header.setText(
             (
@@ -1624,7 +1626,7 @@ class BoxingGameWindow(QMainWindow):
                 "",
                 "Organization Champions (Current Division):",
             ])
-            for org_name in ["WBC", "WBA", "IBF", "WBO"]:
+            for org_name in ORGANIZATION_NAMES:
                 champion = self.state.pro_career.organization_champions.get(org_name, {}).get(
                     self.state.boxer.division
                 )

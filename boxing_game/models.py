@@ -1,3 +1,10 @@
+"""Core data models for the boxing career game.
+
+Contains all dataclasses representing game state: boxer profiles, fight
+records, fight results, career state, and serialisation/deserialisation
+logic including legacy save migration.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -8,6 +15,7 @@ from boxing_game.constants import STARTING_AGE
 
 @dataclass
 class Stats:
+    """The nine boxing attributes that define a fighter's style."""
     power: int
     speed: int
     chin: int
@@ -48,6 +56,7 @@ class Stats:
 
 @dataclass
 class CareerRecord:
+    """Win/loss/draw/KO record for either amateur or pro career."""
     wins: int = 0
     losses: int = 0
     draws: int = 0
@@ -73,6 +82,7 @@ class CareerRecord:
 
 @dataclass
 class BoxerProfile:
+    """Biographical and physical attributes of a boxer."""
     name: str
     age: int
     stance: str
@@ -114,6 +124,7 @@ class BoxerProfile:
 
 @dataclass
 class AgingProfile:
+    """Per-boxer aging curve parameters (peak, decline onset, severity)."""
     peak_age: int
     decline_onset_age: int
     decline_severity: float
@@ -148,6 +159,7 @@ class AgingProfile:
 
 @dataclass
 class Boxer:
+    """Complete mutable state for a player-controlled boxer."""
     profile: BoxerProfile
     stats: Stats
     division: str
@@ -224,6 +236,7 @@ class Boxer:
 
 @dataclass
 class Opponent:
+    """Generated NPC opponent for a fight offer."""
     name: str
     age: int
     stance: str
@@ -262,6 +275,7 @@ class Opponent:
 
 @dataclass
 class FightResult:
+    """Outcome of a simulated fight (winner, method, scorecards)."""
     winner: str
     method: str
     rounds_completed: int
@@ -290,6 +304,7 @@ class FightResult:
 
 @dataclass
 class FightHistoryEntry:
+    """A single entry in the career fight history log."""
     opponent_name: str
     opponent_rating: int
     result: FightResult
@@ -367,6 +382,7 @@ class FightHistoryEntry:
 
 @dataclass
 class AmateurProgress:
+    """Tracks the amateur career phase (fights, tier)."""
     fights_taken: int = 0
     tier: str = "novice"
 
@@ -386,6 +402,7 @@ class AmateurProgress:
 
 @dataclass
 class ProCareer:
+    """Full pro-career state: rankings, titles, finances, and staff."""
     is_active: bool = False
     promoter: str = ""
     organization_focus: str = "WBC"
@@ -525,6 +542,7 @@ class ProCareer:
 
 @dataclass
 class CareerState:
+    """Top-level game state container persisted across save/load cycles."""
     boxer: Boxer
     month: int = 1
     year: int = 1

@@ -1,3 +1,9 @@
+"""Save/load/delete career state as JSON.
+
+Supports atomic writes, slot management (rename/duplicate/delete),
+and metadata listing for the GUI save-management page.
+"""
+
 from __future__ import annotations
 
 import json
@@ -9,11 +15,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
+from boxing_game.constants import CURRENT_SAVE_VERSION
 from boxing_game.models import CareerState
+from boxing_game.utils import coerce_int
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_SAVE_DIR = PROJECT_ROOT / "saves"
-CURRENT_SAVE_VERSION = 2
 
 _SLOT_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{1,40}$")
 
@@ -24,6 +31,8 @@ class SavegameError(ValueError):
 
 @dataclass(frozen=True)
 class SaveMetadata:
+    """Lightweight metadata extracted from a save file without full load."""
+
     slot: str
     path: Path
     saved_at: str
@@ -37,6 +46,10 @@ class SaveMetadata:
     is_valid: bool
     error: str = ""
 
+
+# ---------------------------------------------------------------------------
+# Slot validation
+# ---------------------------------------------------------------------------
 
 def _validate_slot(slot: str) -> str:
     candidate = slot.strip()
@@ -53,7 +66,12 @@ def _save_path(slot: str, save_dir: Path | None = None) -> Path:
     return base / f"{slot}.json"
 
 
+# ---------------------------------------------------------------------------
+# Core I/O
+# ---------------------------------------------------------------------------
+
 def save_state(state: CareerState, slot: str, save_dir: Path | None = None) -> Path:
+    """Persist *state* to the given save slot atomically."""
     normalized_slot = _validate_slot(slot)
     target_path = _save_path(normalized_slot, save_dir=save_dir)
 
@@ -65,11 +83,8 @@ def save_state(state: CareerState, slot: str, save_dir: Path | None = None) -> P
     temp_path: Path | None = None
     try:
         with NamedTemporaryFile(
-            "w",
-            encoding="utf-8",
-            dir=target_path.parent,
-            prefix=f"{normalized_slot}.",
-            suffix=".tmp",
+            "w", encoding="utf-8",
+            dir=target_path.parent, prefix=f"{normalized_slot}.", suffix=".tmp",
             delete=False,
         ) as handle:
             temp_path = Path(handle.name)
@@ -86,6 +101,7 @@ def save_state(state: CareerState, slot: str, save_dir: Path | None = None) -> P
 
 
 def load_state(slot: str, save_dir: Path | None = None) -> CareerState:
+    """Load and validate a career state from the given save slot."""
     normalized_slot = _validate_slot(slot)
     source_path = _save_path(normalized_slot, save_dir=save_dir)
     if not source_path.exists():
@@ -122,7 +138,12 @@ def load_state(slot: str, save_dir: Path | None = None) -> CareerState:
         raise SavegameError("Save file career payload is invalid.") from exc
 
 
+# ---------------------------------------------------------------------------
+# Slot management
+# ---------------------------------------------------------------------------
+
 def rename_state(slot: str, new_slot: str, save_dir: Path | None = None) -> Path:
+    """Rename an existing save slot, returning the new path."""
     source_slot = _validate_slot(slot)
     target_slot = _validate_slot(new_slot)
     if source_slot == target_slot:
@@ -143,6 +164,7 @@ def rename_state(slot: str, new_slot: str, save_dir: Path | None = None) -> Path
 
 
 def duplicate_state(slot: str, new_slot: str, save_dir: Path | None = None) -> Path:
+    """Duplicate a save slot under a new name."""
     source_slot = _validate_slot(slot)
     target_slot = _validate_slot(new_slot)
     if source_slot == target_slot:
@@ -163,6 +185,7 @@ def duplicate_state(slot: str, new_slot: str, save_dir: Path | None = None) -> P
 
 
 def delete_state(slot: str, save_dir: Path | None = None) -> Path:
+    """Delete a save slot file."""
     normalized_slot = _validate_slot(slot)
     target_path = _save_path(normalized_slot, save_dir=save_dir)
     if not target_path.exists():
@@ -175,84 +198,28 @@ def delete_state(slot: str, save_dir: Path | None = None) -> Path:
     return target_path
 
 
-def _coerce_int(value: object) -> int | None:
-    try:
-        if value is None:
-            return None
-        return int(value)
-    except (TypeError, ValueError):
-        return None
-
+# ---------------------------------------------------------------------------
+# Metadata extraction
+# ---------------------------------------------------------------------------
 
 def _read_save_metadata(slot: str, path: Path) -> SaveMetadata:
+    """Read lightweight metadata from a save file without full state load."""
     try:
         with path.open("r", encoding="utf-8") as handle:
             payload = json.load(handle)
     except json.JSONDecodeError:
-        return SaveMetadata(
-            slot=slot,
-            path=path,
-            saved_at="",
-            version=None,
-            boxer_name="",
-            age=None,
-            division="",
-            month=None,
-            year=None,
-            is_pro=None,
-            is_valid=False,
-            error="Invalid JSON",
-        )
+        return _invalid_metadata(slot, path, "Invalid JSON")
     except OSError as exc:
-        return SaveMetadata(
-            slot=slot,
-            path=path,
-            saved_at="",
-            version=None,
-            boxer_name="",
-            age=None,
-            division="",
-            month=None,
-            year=None,
-            is_pro=None,
-            is_valid=False,
-            error=f"Unreadable: {exc}",
-        )
+        return _invalid_metadata(slot, path, f"Unreadable: {exc}")
 
     if not isinstance(payload, dict):
-        return SaveMetadata(
-            slot=slot,
-            path=path,
-            saved_at="",
-            version=None,
-            boxer_name="",
-            age=None,
-            division="",
-            month=None,
-            year=None,
-            is_pro=None,
-            is_valid=False,
-            error="Invalid payload",
-        )
+        return _invalid_metadata(slot, path, "Invalid payload")
 
     saved_at = str(payload.get("saved_at", ""))
-    version = _coerce_int(payload.get("version"))
+    version = coerce_int(payload.get("version"))
     career = payload.get("career")
     if not isinstance(career, dict):
-        return SaveMetadata(
-            slot=slot,
-            path=path,
-            saved_at=saved_at,
-            version=version,
-            boxer_name="",
-            age=None,
-            division="",
-            month=None,
-            year=None,
-            is_pro=None,
-            is_valid=False,
-            error="Missing career payload",
-        )
+        return _invalid_metadata(slot, path, "Missing career payload", saved_at=saved_at, version=version)
 
     boxer = career.get("boxer")
     boxer_payload = boxer if isinstance(boxer, dict) else {}
@@ -263,24 +230,32 @@ def _read_save_metadata(slot: str, path: Path) -> SaveMetadata:
 
     boxer_name = str(profile_payload.get("name", "")).strip()
     division = str(boxer_payload.get("division", "")).strip()
-    age = _coerce_int(profile_payload.get("age"))
-    month = _coerce_int(career.get("month"))
-    year = _coerce_int(career.get("year"))
+    age = coerce_int(profile_payload.get("age"))
+    month = coerce_int(career.get("month"))
+    year = coerce_int(career.get("year"))
     is_pro_raw = pro_payload.get("is_active")
     is_pro = bool(is_pro_raw) if is_pro_raw is not None else None
 
     return SaveMetadata(
-        slot=slot,
-        path=path,
-        saved_at=saved_at,
-        version=version,
-        boxer_name=boxer_name,
-        age=age,
-        division=division,
-        month=month,
-        year=year,
-        is_pro=is_pro,
-        is_valid=True,
+        slot=slot, path=path, saved_at=saved_at, version=version,
+        boxer_name=boxer_name, age=age, division=division,
+        month=month, year=year, is_pro=is_pro, is_valid=True,
+    )
+
+
+def _invalid_metadata(
+    slot: str,
+    path: Path,
+    error: str,
+    *,
+    saved_at: str = "",
+    version: int | None = None,
+) -> SaveMetadata:
+    """Construct a ``SaveMetadata`` for an unreadable/invalid save file."""
+    return SaveMetadata(
+        slot=slot, path=path, saved_at=saved_at, version=version,
+        boxer_name="", age=None, division="", month=None, year=None,
+        is_pro=None, is_valid=False, error=error,
     )
 
 
@@ -296,7 +271,12 @@ def _saved_at_sort_value(saved_at: str) -> datetime:
     return parsed.astimezone(timezone.utc)
 
 
+# ---------------------------------------------------------------------------
+# Listing
+# ---------------------------------------------------------------------------
+
 def list_save_metadata(save_dir: Path | None = None) -> list[SaveMetadata]:
+    """Return metadata for all save slots, newest first."""
     base = save_dir or DEFAULT_SAVE_DIR
     if not base.exists():
         return []
@@ -315,6 +295,7 @@ def list_save_metadata(save_dir: Path | None = None) -> list[SaveMetadata]:
 
 
 def list_saves(save_dir: Path | None = None) -> list[str]:
+    """Return a sorted list of save slot names."""
     base = save_dir or DEFAULT_SAVE_DIR
     if not base.exists():
         return []

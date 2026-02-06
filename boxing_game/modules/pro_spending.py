@@ -1,14 +1,25 @@
+"""Pro money management: camps, medical recovery, and staff upgrades.
+
+Provides money-driven gameplay systems that unlock after turning pro.
+Staff passives influence training quality, wear reduction, rest
+recovery, and aging outcomes.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 
+from boxing_game.constants import MAX_FATIGUE, MAX_INJURY_RISK
 from boxing_game.models import CareerState, Stats
 from boxing_game.modules.attribute_engine import training_gain
 from boxing_game.rules_registry import load_rule_set
+from boxing_game.utils import clamp_int
 
 
 @dataclass(frozen=True)
 class StaffUpgradeOption:
+    """A single staff member that can be upgraded."""
+
     key: str
     label: str
     level: int
@@ -16,15 +27,20 @@ class StaffUpgradeOption:
     next_cost: float | None
 
 
-def _clamp_int(value: int, minimum: int, maximum: int) -> int:
-    return max(minimum, min(maximum, value))
-
+# ---------------------------------------------------------------------------
+# Rules access
+# ---------------------------------------------------------------------------
 
 def _pro_spending_rules() -> dict:
     return load_rule_set("pro_spending")
 
 
+# ---------------------------------------------------------------------------
+# Staff level management
+# ---------------------------------------------------------------------------
+
 def ensure_staff_levels(state: CareerState) -> None:
+    """Backfill missing staff keys with level 0."""
     cfg = _pro_spending_rules()["staff_upgrades"]
     if not isinstance(state.pro_career.staff_levels, dict):
         state.pro_career.staff_levels = {}
@@ -43,6 +59,7 @@ def _staff_level(state: CareerState, staff_key: str) -> int:
 
 
 def staff_summary_lines(state: CareerState) -> list[str]:
+    """Return human-readable lines describing each staff member's level."""
     ensure_staff_levels(state)
     rules = _pro_spending_rules()["staff_upgrades"]
     lines: list[str] = []
@@ -55,6 +72,7 @@ def staff_summary_lines(state: CareerState) -> list[str]:
 
 
 def list_staff_upgrade_options(state: CareerState) -> list[StaffUpgradeOption]:
+    """Return all available staff upgrades with their current level and cost."""
     ensure_staff_levels(state)
     rules = _pro_spending_rules()["staff_upgrades"]
     options: list[StaffUpgradeOption] = []
@@ -62,9 +80,7 @@ def list_staff_upgrade_options(state: CareerState) -> list[StaffUpgradeOption]:
         level = _staff_level(state, staff_key)
         max_level = int(cfg.get("max_level", len(cfg.get("cost_by_level", []))))
         costs = [float(item) for item in cfg.get("cost_by_level", [])]
-        next_cost = None
-        if level < max_level and level < len(costs):
-            next_cost = costs[level]
+        next_cost = costs[level] if level < max_level and level < len(costs) else None
         options.append(
             StaffUpgradeOption(
                 key=str(staff_key),
@@ -76,6 +92,10 @@ def list_staff_upgrade_options(state: CareerState) -> list[StaffUpgradeOption]:
         )
     return options
 
+
+# ---------------------------------------------------------------------------
+# Staff passive bonuses
+# ---------------------------------------------------------------------------
 
 def _elite_coach_bonus(state: CareerState) -> int:
     if not state.pro_career.is_active:
@@ -92,22 +112,22 @@ def _nutritionist_level(state: CareerState) -> int:
 
 
 def adjusted_fatigue_gain(state: CareerState, base_gain: int) -> int:
+    """Return fatigue gain after nutritionist passive reduction."""
     gain = int(base_gain)
     if gain <= 0:
         return 0
     rules = _pro_spending_rules()["staff_upgrades"]["nutritionist"]
-    reduction_per_level = int(rules.get("fatigue_gain_reduction_per_level", 0))
-    reduction = _nutritionist_level(state) * reduction_per_level
+    reduction = _nutritionist_level(state) * int(rules.get("fatigue_gain_reduction_per_level", 0))
     return max(0, gain - reduction)
 
 
 def adjusted_injury_risk_gain(state: CareerState, base_gain: int) -> int:
+    """Return injury-risk gain after nutritionist passive reduction."""
     gain = int(base_gain)
     if gain <= 0:
         return 0
     rules = _pro_spending_rules()["staff_upgrades"]["nutritionist"]
-    reduction_per_level = int(rules.get("injury_risk_gain_reduction_per_level", 0))
-    reduction = _nutritionist_level(state) * reduction_per_level
+    reduction = _nutritionist_level(state) * int(rules.get("injury_risk_gain_reduction_per_level", 0))
     return max(0, gain - reduction)
 
 
@@ -122,6 +142,7 @@ def _rest_injury_bonus(state: CareerState) -> int:
 
 
 def age_decline_reduction_factor(state: CareerState) -> float:
+    """Return the aging-decline multiplier provided by sports-science staff."""
     if not state.pro_career.is_active:
         return 1.0
     rules = _pro_spending_rules()["staff_upgrades"].get("sports_science", {})
@@ -131,6 +152,7 @@ def age_decline_reduction_factor(state: CareerState) -> float:
 
 
 def age_iq_growth_bonus_factor(state: CareerState) -> float:
+    """Return the ring-IQ growth bonus multiplier from sports-science staff."""
     if not state.pro_career.is_active:
         return 1.0
     rules = _pro_spending_rules()["staff_upgrades"].get("sports_science", {})
@@ -138,6 +160,10 @@ def age_iq_growth_bonus_factor(state: CareerState) -> float:
     per_level = float(rules.get("ring_iq_growth_bonus_per_level", 0.0))
     return max(1.0, 1.0 + (level * per_level))
 
+
+# ---------------------------------------------------------------------------
+# Focus training helpers
+# ---------------------------------------------------------------------------
 
 def _add_focus_points(stats: Stats, focus: str, amount: int) -> Stats:
     if amount <= 0:
@@ -151,17 +177,22 @@ def _add_focus_points(stats: Stats, focus: str, amount: int) -> Stats:
     return Stats.from_dict(fields)
 
 
+# ---------------------------------------------------------------------------
+# Monthly actions
+# ---------------------------------------------------------------------------
+
 def apply_standard_training(state: CareerState, focus: str) -> dict[str, int]:
+    """Apply one month of standard training on *focus*, returning details."""
     state.boxer.stats = training_gain(state.boxer.stats, focus)
 
     coach_bonus = _elite_coach_bonus(state)
     state.boxer.stats = _add_focus_points(state.boxer.stats, focus, coach_bonus)
 
     fatigue_gain = adjusted_fatigue_gain(state, 1)
-    state.boxer.fatigue = _clamp_int(state.boxer.fatigue + fatigue_gain, 0, 12)
+    state.boxer.fatigue = clamp_int(state.boxer.fatigue + fatigue_gain, 0, MAX_FATIGUE)
 
     injury_gain = adjusted_injury_risk_gain(state, 2)
-    state.boxer.injury_risk = _clamp_int(state.boxer.injury_risk + injury_gain, 0, 100)
+    state.boxer.injury_risk = clamp_int(state.boxer.injury_risk + injury_gain, 0, MAX_INJURY_RISK)
 
     return {
         "coach_bonus": coach_bonus,
@@ -171,14 +202,15 @@ def apply_standard_training(state: CareerState, focus: str) -> dict[str, int]:
 
 
 def apply_rest_month(state: CareerState) -> dict[str, int]:
+    """Apply one month of rest, returning fatigue/injury reductions."""
     fatigue_reduction = 3 + _rest_fatigue_bonus(state)
     injury_reduction = 3 + _rest_injury_bonus(state)
 
     before_fatigue = state.boxer.fatigue
     before_injury = state.boxer.injury_risk
 
-    state.boxer.fatigue = _clamp_int(before_fatigue - fatigue_reduction, 0, 12)
-    state.boxer.injury_risk = _clamp_int(before_injury - injury_reduction, 0, 100)
+    state.boxer.fatigue = clamp_int(before_fatigue - fatigue_reduction, 0, MAX_FATIGUE)
+    state.boxer.injury_risk = clamp_int(before_injury - injury_reduction, 0, MAX_INJURY_RISK)
 
     return {
         "fatigue_reduced": before_fatigue - state.boxer.fatigue,
@@ -187,6 +219,7 @@ def apply_rest_month(state: CareerState) -> dict[str, int]:
 
 
 def special_training_camp(state: CareerState, focus: str) -> dict[str, int | float]:
+    """Run a paid special training camp (pro only), returning details."""
     if not state.pro_career.is_active:
         raise ValueError("Special training camp is available only after turning pro.")
 
@@ -203,10 +236,10 @@ def special_training_camp(state: CareerState, focus: str) -> dict[str, int | flo
     state.boxer.stats = _add_focus_points(state.boxer.stats, focus, coach_bonus)
 
     fatigue_gain = adjusted_fatigue_gain(state, int(rules.get("fatigue_gain", 3)))
-    state.boxer.fatigue = _clamp_int(state.boxer.fatigue + fatigue_gain, 0, 12)
+    state.boxer.fatigue = clamp_int(state.boxer.fatigue + fatigue_gain, 0, MAX_FATIGUE)
 
     injury_gain = adjusted_injury_risk_gain(state, int(rules.get("injury_risk_gain", 5)))
-    state.boxer.injury_risk = _clamp_int(state.boxer.injury_risk + injury_gain, 0, 100)
+    state.boxer.injury_risk = clamp_int(state.boxer.injury_risk + injury_gain, 0, MAX_INJURY_RISK)
 
     state.pro_career.purse_balance = max(0.0, state.pro_career.purse_balance - cost)
 
@@ -220,6 +253,7 @@ def special_training_camp(state: CareerState, focus: str) -> dict[str, int | flo
 
 
 def medical_recovery(state: CareerState) -> dict[str, int | float]:
+    """Run a paid medical recovery programme (pro only), returning details."""
     if not state.pro_career.is_active:
         raise ValueError("Medical recovery is available only after turning pro.")
 
@@ -235,8 +269,8 @@ def medical_recovery(state: CareerState) -> dict[str, int | float]:
     before_fatigue = state.boxer.fatigue
     before_injury = state.boxer.injury_risk
 
-    state.boxer.fatigue = _clamp_int(before_fatigue - fatigue_reduction, 0, 12)
-    state.boxer.injury_risk = _clamp_int(before_injury - injury_reduction, 0, 100)
+    state.boxer.fatigue = clamp_int(before_fatigue - fatigue_reduction, 0, MAX_FATIGUE)
+    state.boxer.injury_risk = clamp_int(before_injury - injury_reduction, 0, MAX_INJURY_RISK)
     state.pro_career.purse_balance = max(0.0, state.pro_career.purse_balance - cost)
 
     return {
@@ -248,6 +282,7 @@ def medical_recovery(state: CareerState) -> dict[str, int | float]:
 
 
 def purchase_staff_upgrade(state: CareerState, staff_key: str) -> dict[str, int | float | str]:
+    """Purchase the next level for *staff_key* (pro only)."""
     if not state.pro_career.is_active:
         raise ValueError("Staff upgrades are available only after turning pro.")
 
