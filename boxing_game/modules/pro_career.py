@@ -165,12 +165,24 @@ def _ranking_slots(name: str) -> int:
     return max(1, int(config.get("ranking_slots", 40)))
 
 
+def organization_names() -> list[str]:
+    return list(_organization_names())
+
+
+def ranking_slots(name: str) -> int:
+    return _ranking_slots(name)
+
+
 def _weight_classes() -> list[WeightClass]:
     return list_weight_classes()
 
 
 def _weight_class_names() -> list[str]:
     return [item.name for item in _weight_classes()]
+
+
+def division_names() -> list[str]:
+    return list(_weight_class_names())
 
 
 def _weight_class_by_name(name: str) -> WeightClass:
@@ -315,7 +327,17 @@ def _unique_ranked_name(randomizer: random.Random, used_names: set[str]) -> str:
 def _build_rankings_entries(state: CareerState, organization_name: str) -> list[RankingEntry]:
     ensure_rankings(state)
     ranking_slots = _ranking_slots(organization_name)
+    player_name = state.boxer.profile.name
     player_rank = state.pro_career.rankings.get(organization_name)
+    org_champion = organization_division_champion(state, organization_name, state.boxer.division)
+    if org_champion == player_name:
+        player_rank = 1
+        state.pro_career.rankings[organization_name] = 1
+    elif org_champion and org_champion != player_name and player_rank == 1:
+        # Keep rank #1 reserved for the active organization champion.
+        player_rank = 2 if ranking_slots >= 2 else 1
+        state.pro_career.rankings[organization_name] = player_rank
+
     player_record = state.pro_career.record
     player_rating = boxer_overall_rating(
         state.boxer,
@@ -328,7 +350,7 @@ def _build_rankings_entries(state: CareerState, organization_name: str) -> list[
         f"{state.year}:{state.month}:{_total_pro_fights(state)}"
     )
     randomizer = random.Random(seed)
-    used_names = {state.boxer.profile.name}
+    used_names = {player_name}
 
     lineal_champion = state.pro_career.lineal_champions.get(state.boxer.division)
 
@@ -353,8 +375,8 @@ def _build_rankings_entries(state: CareerState, organization_name: str) -> list[
             )
             continue
 
-        if rank == 1 and lineal_champion and lineal_champion != state.boxer.profile.name:
-            name = lineal_champion
+        if rank == 1 and org_champion and org_champion != player_name:
+            name = org_champion
             used_names.add(name)
             rating = max(89, min(98, int(round(95 + randomizer.gauss(0, 1.2)))))
             wins = max(20, 34 + randomizer.randint(-2, 7))
@@ -1036,7 +1058,7 @@ def determine_sanctioning_bodies(
     if bool(policy["include_focus_org_always"]) and focus_org not in sanctioned:
         sanctioned.append(focus_org)
 
-    if not sanctioned:
+    if not sanctioned and bool(policy["include_focus_org_always"]):
         sanctioned = [focus_org]
 
     canonical_order = _organization_names()
@@ -1235,6 +1257,12 @@ def _update_organization_ranking(
     if org_name not in _organization_names():
         raise ValueError(f"Unknown organization: {org_name}")
     ranking_slots = _ranking_slots(org_name)
+    champion = organization_division_champion(state, org_name, state.boxer.division)
+    player_is_champion = champion == boxer_name
+
+    if player_is_champion and result.winner in {boxer_name, "Draw"}:
+        state.pro_career.rankings[org_name] = 1
+        return 1
 
     current_rank = state.pro_career.rankings.get(org_name)
     new_rank = current_rank
@@ -1328,12 +1356,14 @@ def _update_lineal_after_fight(
 
 
 def _normalized_sanctioning_bodies(raw_value: object, focus_org: str) -> list[str]:
+    policy = _sanctioning_policy()
+    include_focus = bool(policy["include_focus_org_always"])
     canonical = _organization_names()
     if not isinstance(raw_value, list):
-        return [focus_org]
+        return [focus_org] if include_focus else []
     selected = {str(item).strip().upper() for item in raw_value}
     ordered = [org_name for org_name in canonical if org_name in selected]
-    if focus_org not in ordered:
+    if include_focus and focus_org not in ordered:
         ordered.append(focus_org)
     return ordered
 
@@ -1367,6 +1397,7 @@ def _update_organization_titles_after_fight(
                 defenses[division] = 0
                 notes.append(f"Lost {org_name} title to {opponent.name}.")
             else:
+                state.pro_career.rankings[org_name] = 1
                 notes.append(f"Retained {org_name} title in a draw.")
             continue
 
@@ -1452,13 +1483,21 @@ def apply_pro_fight_result(
         result,
         sanctioned_bodies,
     )
-    sanction_note = f"Sanctioned bodies: {', '.join(sanctioned_bodies)}."
+    sanction_note = (
+        f"Sanctioned bodies: {', '.join(sanctioned_bodies)}."
+        if sanctioned_bodies
+        else "Sanctioned bodies: none."
+    )
     rank_note_parts = []
     for org_name in sanctioned_bodies:
         rank_value = rank_updates.get(org_name)
         rank_label = f"#{rank_value}" if rank_value is not None else "Unranked"
         rank_note_parts.append(f"{org_name} {rank_label}")
-    rank_note = f"Rank updates: {', '.join(rank_note_parts)}."
+    rank_note = (
+        f"Rank updates: {', '.join(rank_note_parts)}."
+        if rank_note_parts
+        else "Rank updates: none."
+    )
 
     notes_parts = [lineal_note, sanction_note, rank_note, *org_title_notes]
     combined_notes = " ".join(part for part in notes_parts if part).strip()
@@ -1471,6 +1510,9 @@ def apply_pro_fight_result(
             stage="pro",
             purse=float(purse_breakdown["net"]),
             notes=combined_notes,
+            sanctioning_bodies=list(sanctioned_bodies),
+            ranking_updates=dict(rank_updates),
+            organization_title_updates=list(org_title_notes),
         )
     )
     return new_rank

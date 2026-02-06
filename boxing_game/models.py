@@ -296,6 +296,9 @@ class FightHistoryEntry:
     stage: str = "amateur"
     purse: float = 0.0
     notes: str = ""
+    sanctioning_bodies: list[str] = field(default_factory=list)
+    ranking_updates: dict[str, int | None] = field(default_factory=dict)
+    organization_title_updates: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -305,10 +308,50 @@ class FightHistoryEntry:
             "stage": self.stage,
             "purse": self.purse,
             "notes": self.notes,
+            "sanctioning_bodies": self.sanctioning_bodies,
+            "ranking_updates": self.ranking_updates,
+            "organization_title_updates": self.organization_title_updates,
         }
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "FightHistoryEntry":
+        raw_bodies = payload.get("sanctioning_bodies", [])
+        sanctioning_bodies: list[str] = []
+        if isinstance(raw_bodies, list):
+            for item in raw_bodies:
+                if item is None:
+                    continue
+                label = str(item).strip().upper()
+                if label and label not in sanctioning_bodies:
+                    sanctioning_bodies.append(label)
+
+        raw_ranking_updates = payload.get("ranking_updates", {})
+        ranking_updates: dict[str, int | None] = {}
+        if isinstance(raw_ranking_updates, dict):
+            for org_name, rank in raw_ranking_updates.items():
+                if org_name is None:
+                    continue
+                org_key = str(org_name).strip().upper()
+                if not org_key:
+                    continue
+                if rank is None:
+                    ranking_updates[org_key] = None
+                    continue
+                try:
+                    ranking_updates[org_key] = int(rank)
+                except (TypeError, ValueError):
+                    ranking_updates[org_key] = None
+
+        raw_title_updates = payload.get("organization_title_updates", [])
+        organization_title_updates: list[str] = []
+        if isinstance(raw_title_updates, list):
+            for item in raw_title_updates:
+                if item is None:
+                    continue
+                text = str(item).strip()
+                if text:
+                    organization_title_updates.append(text)
+
         return cls(
             opponent_name=str(payload["opponent_name"]),
             opponent_rating=int(payload["opponent_rating"]),
@@ -316,6 +359,9 @@ class FightHistoryEntry:
             stage=str(payload.get("stage", "amateur")),
             purse=float(payload.get("purse", 0.0)),
             notes=str(payload.get("notes", "")),
+            sanctioning_bodies=sanctioning_bodies,
+            ranking_updates=ranking_updates,
+            organization_title_updates=organization_title_updates,
         )
 
 

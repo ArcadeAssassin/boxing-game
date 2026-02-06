@@ -122,6 +122,10 @@ Current readiness gate (from `rules/amateur_progression.json`):
 - Added multi-body sanctioning support so one pro bout can move rankings in multiple organizations.
 - Added monthly AI world simulation for sanctioning-body title changes and ambient ranking movement.
 - Added rule-driven sanctioning probability tuning and a dedicated GUI World News panel.
+- Ranking snapshots now enforce organization champion alignment at `#1` and auto-repair stale player `#1` states.
+- Champion draws in organization title fights now keep the champion at `#1` (no accidental demotion).
+- Pro fight history now stores structured sanctioning metadata (`sanctioning_bodies`, per-body `ranking_updates`, title-note list).
+- World simulation tuning is now fully rule-driven via `rules/pro_career.json` (`world_simulation` block).
 - Added an experience progression system tied to fight count/results and integrated into rating/fight sim.
 - Legacy saves now backfill missing `experience_points` from total recorded fights.
 - Added `.gitignore` for Python/runtime artifacts.

@@ -11,6 +11,7 @@ from boxing_game.modules.player_profile import create_boxer
 from boxing_game.modules.pro_career import (
     apply_pro_fight_result,
     change_division,
+    determine_sanctioning_bodies,
     ensure_rankings,
     generate_pro_opponent,
     offer_purse,
@@ -272,6 +273,37 @@ def test_rankings_snapshot_contains_player_row() -> None:
     assert player_rows[0].name == state.boxer.profile.name
 
 
+def test_rankings_snapshot_uses_org_champion_at_number_one() -> None:
+    state = _build_pro_ready_state()
+    turn_pro(state, rng=random.Random(111))
+    division = state.boxer.division
+    state.pro_career.rankings["WBC"] = 8
+    state.pro_career.organization_champions["WBC"][division] = state.boxer.profile.name
+    state.pro_career.organization_defenses["WBC"][division] = 2
+
+    rows = rankings_snapshot(state, "WBC", top_n=5)
+    player_row = next(row for row in rows if row.is_player)
+
+    assert player_row.rank == 1
+    assert state.pro_career.rankings["WBC"] == 1
+
+
+def test_rankings_snapshot_demotes_stale_player_number_one_if_not_champion() -> None:
+    state = _build_pro_ready_state()
+    turn_pro(state, rng=random.Random(112))
+    division = state.boxer.division
+    state.pro_career.rankings["WBC"] = 1
+    state.pro_career.organization_champions["WBC"][division] = "External Champion"
+
+    rows = rankings_snapshot(state, "WBC", top_n=5)
+    top_row = rows[0]
+    player_row = next(row for row in rows if row.is_player)
+
+    assert top_row.name == "External Champion"
+    assert player_row.rank == 2
+    assert state.pro_career.rankings["WBC"] == 2
+
+
 def test_pound_for_pound_snapshot_includes_player() -> None:
     state = _build_pro_ready_state()
     turn_pro(state, rng=random.Random(5))
@@ -472,6 +504,142 @@ def test_pro_fight_updates_rankings_for_all_sanctioned_bodies() -> None:
     assert state.pro_career.rankings["WBC"] < wbc_before
     assert state.pro_career.rankings["IBF"] < ibf_before
     assert state.pro_career.rankings["WBA"] == wba_before
+
+
+def test_champion_draw_does_not_demote_rank() -> None:
+    state = _build_pro_ready_state()
+    turn_pro(state, rng=random.Random(808))
+    division = state.boxer.division
+    org_name = "WBC"
+    state.pro_career.organization_champions[org_name][division] = state.boxer.profile.name
+    state.pro_career.rankings[org_name] = 1
+
+    opponent = Opponent(
+        name="Title Challenger",
+        age=30,
+        stance="orthodox",
+        height_ft=5,
+        height_in=10,
+        weight_lbs=147,
+        division=division,
+        stats=state.boxer.stats,
+        rating=88,
+        record=CareerRecord(wins=21, losses=2, draws=1, kos=12),
+        ranking_position=3,
+        organization_ranks={org_name: 3},
+    )
+    result = FightResult(
+        winner="Draw",
+        method="MD",
+        rounds_completed=10,
+        scorecards=["95-95", "96-94", "94-96"],
+        round_log=[],
+    )
+    purse = {
+        "gross": 11000.0,
+        "manager_cut": 1100.0,
+        "trainer_cut": 1100.0,
+        "camp_cost": 880.0,
+        "commission_cut": 660.0,
+        "sanction_fee": 330.0,
+        "total_expenses": 4070.0,
+        "net": 6930.0,
+        "sanctioning_bodies": [org_name],
+    }
+
+    apply_pro_fight_result(state, opponent, result, purse)
+
+    assert state.pro_career.rankings[org_name] == 1
+
+
+def test_sanctioning_policy_can_exclude_focus_org(monkeypatch: pytest.MonkeyPatch) -> None:
+    state = _build_pro_ready_state()
+    turn_pro(state, rng=random.Random(909))
+    division = state.boxer.division
+    focus_org = state.pro_career.organization_focus
+    for org_name in state.pro_career.organization_champions:
+        state.pro_career.organization_champions[org_name][division] = "Someone Else"
+
+    opponent = Opponent(
+        name="No Body Opponent",
+        age=28,
+        stance="southpaw",
+        height_ft=5,
+        height_in=9,
+        weight_lbs=147,
+        division=division,
+        stats=state.boxer.stats,
+        rating=82,
+        record=CareerRecord(wins=18, losses=3, draws=0, kos=9),
+        ranking_position=None,
+        organization_ranks={},
+    )
+
+    monkeypatch.setattr(
+        "boxing_game.modules.pro_career._sanctioning_policy",
+        lambda: {
+            "include_focus_org_always": False,
+            "cross_body_top_window_prob": 0.0,
+            "cross_body_elite_prob": 0.0,
+            "cross_body_rank_gap_prob": 0.0,
+            "cross_body_single_top10_prob": 0.0,
+            "cross_body_rank_window": 20,
+            "cross_body_elite_cutoff": 15,
+            "cross_body_rank_gap_max": 8,
+            "opponent_cross_rank_presence_prob": 0.0,
+            "opponent_unranked_pool_rank_chance": 0.0,
+            "opponent_cross_rank_jitter": 5,
+            "tier_probability_multipliers": {"prospect": 1.0, "contender": 1.0, "ranked": 1.0},
+        },
+    )
+
+    bodies = determine_sanctioning_bodies(state, opponent, rng=random.Random(910))
+
+    assert bodies == []
+    assert focus_org not in bodies
+
+
+def test_history_entry_stores_structured_sanctioning_metadata() -> None:
+    state = _build_pro_ready_state()
+    turn_pro(state, rng=random.Random(990))
+    opponent = Opponent(
+        name="Metadata Opponent",
+        age=27,
+        stance="orthodox",
+        height_ft=5,
+        height_in=10,
+        weight_lbs=147,
+        division=state.boxer.division,
+        stats=state.boxer.stats,
+        rating=86,
+        record=CareerRecord(wins=20, losses=3, draws=1, kos=11),
+        ranking_position=10,
+        organization_ranks={"WBC": 10, "IBF": 11},
+    )
+    result = FightResult(
+        winner=state.boxer.profile.name,
+        method="UD",
+        rounds_completed=10,
+        scorecards=["97-93", "96-94", "98-92"],
+        round_log=[],
+    )
+    purse = {
+        "gross": 10000.0,
+        "manager_cut": 1000.0,
+        "trainer_cut": 1000.0,
+        "camp_cost": 800.0,
+        "commission_cut": 600.0,
+        "sanction_fee": 300.0,
+        "total_expenses": 3700.0,
+        "net": 6300.0,
+        "sanctioning_bodies": ["WBC", "IBF"],
+    }
+
+    apply_pro_fight_result(state, opponent, result, purse)
+    entry = state.history[-1]
+
+    assert entry.sanctioning_bodies == ["WBC", "IBF"]
+    assert "WBC" in entry.ranking_updates
 
 
 def test_sanctioning_tier_multiplier_increases_cross_body_frequency() -> None:

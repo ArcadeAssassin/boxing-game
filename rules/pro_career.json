@@ -42,6 +42,18 @@
       "ranked": 1.25
     }
   },
+  "world_simulation": {
+    "simulate_all_divisions": true,
+    "title_fight_probability_per_org": 0.28,
+    "title_upset_probability": 0.18,
+    "title_defense_news_probability": 0.65,
+    "max_news_items_per_month": 20,
+    "rank_drift_up_probability_per_idle_month": 0.12,
+    "rank_drift_up_probability_cap": 0.42,
+    "rank_drift_down_probability": 0.1,
+    "rank_drift_up_step_min": 1,
+    "rank_drift_up_step_max": 2
+  },
   "tiers": [
     {
       "name": "prospect",
