@@ -1,0 +1,42 @@
+{
+  "base_points_per_fight": {
+    "amateur": 4,
+    "pro": 6
+  },
+  "result_points": {
+    "win": 3,
+    "draw": 2,
+    "loss": 1
+  },
+  "ko_bonus": 1,
+  "rating_bonus_scale": 0.05,
+  "max_gain_per_fight": 14,
+  "fight_bonus_per_level": 0.45,
+  "max_fight_bonus": 4.0,
+  "levels": [
+    {
+      "name": "newcomer",
+      "min_points": 0
+    },
+    {
+      "name": "apprentice",
+      "min_points": 25
+    },
+    {
+      "name": "tested",
+      "min_points": 60
+    },
+    {
+      "name": "seasoned",
+      "min_points": 110
+    },
+    {
+      "name": "veteran",
+      "min_points": 180
+    },
+    {
+      "name": "master",
+      "min_points": 260
+    }
+  ]
+}

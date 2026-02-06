@@ -14,6 +14,7 @@ from boxing_game.models import (
 )
 from boxing_game.modules.amateur_circuit import FIRST_NAMES, LAST_NAMES, STANCE_CHOICES, pro_ready
 from boxing_game.modules.attribute_engine import build_stats
+from boxing_game.modules.experience_engine import add_experience_points, fight_experience_gain
 from boxing_game.modules.rating_engine import boxer_overall_rating
 from boxing_game.modules.weight_class_engine import classify_weight
 from boxing_game.rules_registry import load_rule_set
@@ -119,7 +120,11 @@ def rankings_snapshot(
     visible_count = min(top_n, ranking_slots)
     player_rank = state.pro_career.rankings.get(organization_name)
     player_record = state.pro_career.record
-    player_rating = boxer_overall_rating(state.boxer, stage="pro")
+    player_rating = boxer_overall_rating(
+        state.boxer,
+        stage="pro",
+        pro_record=state.pro_career.record,
+    )
 
     seed = (
         f"{state.boxer.profile.name}:{organization_name}:{state.year}:"
@@ -393,6 +398,14 @@ def apply_pro_fight_result(
     else:
         record.losses += 1
         state.boxer.popularity = max(1, state.boxer.popularity + int(popularity_cfg["loss"]))
+
+    experience_gain = fight_experience_gain(
+        stage="pro",
+        boxer_name=boxer_name,
+        opponent_rating=opponent.rating,
+        result=result,
+    )
+    add_experience_points(state.boxer, experience_gain)
 
     state.pro_career.purse_balance += float(purse_breakdown["net"])
     state.pro_career.total_earnings += float(purse_breakdown["gross"])

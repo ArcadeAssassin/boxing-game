@@ -121,6 +121,7 @@ class Boxer:
     amateur_points: int = 0
     popularity: int = 10
     fatigue: int = 0
+    experience_points: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -131,18 +132,28 @@ class Boxer:
             "amateur_points": self.amateur_points,
             "popularity": self.popularity,
             "fatigue": self.fatigue,
+            "experience_points": self.experience_points,
         }
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "Boxer":
+        record = CareerRecord.from_dict(payload.get("record", {}))
+        experience_raw = payload.get("experience_points")
+        if experience_raw is None:
+            inferred_fights = record.wins + record.losses + record.draws
+            inferred_experience = max(0, inferred_fights * 4)
+        else:
+            inferred_experience = max(0, int(experience_raw))
+
         return cls(
             profile=BoxerProfile.from_dict(payload["profile"]),
             stats=Stats.from_dict(payload["stats"]),
             division=str(payload["division"]),
-            record=CareerRecord.from_dict(payload.get("record", {})),
+            record=record,
             amateur_points=int(payload.get("amateur_points", 0)),
             popularity=int(payload.get("popularity", 10)),
             fatigue=int(payload.get("fatigue", 0)),
+            experience_points=inferred_experience,
         )
 
 
@@ -326,7 +337,22 @@ class CareerState:
         else:
             inferred_career_months = max(0, int(raw_career_months))
 
-        boxer = Boxer.from_dict(payload["boxer"])
+        pro_career = ProCareer.from_dict(payload.get("pro_career", {}))
+        boxer_payload = payload["boxer"]
+        boxer = Boxer.from_dict(boxer_payload)
+        if "experience_points" not in boxer_payload:
+            from boxing_game.modules.experience_engine import infer_points_from_total_fights
+
+            total_fights = (
+                boxer.record.wins
+                + boxer.record.losses
+                + boxer.record.draws
+                + pro_career.record.wins
+                + pro_career.record.losses
+                + pro_career.record.draws
+            )
+            boxer.experience_points = infer_points_from_total_fights(total_fights)
+
         expected_age = STARTING_AGE + (inferred_career_months // 12)
         if boxer.profile.age < expected_age:
             boxer.profile.age = expected_age
@@ -337,7 +363,7 @@ class CareerState:
             year=year,
             career_months=inferred_career_months,
             amateur_progress=AmateurProgress.from_dict(payload.get("amateur_progress", {})),
-            pro_career=ProCareer.from_dict(payload.get("pro_career", {})),
+            pro_career=pro_career,
             history=[
                 FightHistoryEntry.from_dict(entry)
                 for entry in payload.get("history", [])

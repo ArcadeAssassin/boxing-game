@@ -4,6 +4,7 @@ import random
 from dataclasses import dataclass
 
 from boxing_game.models import Boxer, FightResult, Opponent, Stats
+from boxing_game.modules.experience_engine import boxer_experience_profile, opponent_experience_profile
 from boxing_game.rules_registry import load_rule_set
 
 
@@ -47,6 +48,8 @@ def _simulate_with_model(
 
     boxer_base_skill = _weighted_skill(boxer.stats, style_weights)
     opponent_base_skill = _weighted_skill(opponent.stats, style_weights)
+    boxer_experience_bonus = boxer_experience_profile(boxer).fight_bonus
+    opponent_experience_bonus = opponent_experience_profile(opponent).fight_bonus
 
     judge_cards = [_JudgeCard(), _JudgeCard(), _JudgeCard()]
     round_log: list[str] = []
@@ -55,8 +58,16 @@ def _simulate_with_model(
     opponent_fatigue = 0.0
 
     for round_number in range(1, scheduled_rounds + 1):
-        boxer_form = boxer_base_skill - (boxer_fatigue * fatigue_penalty)
-        opponent_form = opponent_base_skill - (opponent_fatigue * fatigue_penalty)
+        boxer_form = (
+            boxer_base_skill
+            + boxer_experience_bonus
+            - (boxer_fatigue * fatigue_penalty)
+        )
+        opponent_form = (
+            opponent_base_skill
+            + opponent_experience_bonus
+            - (opponent_fatigue * fatigue_penalty)
+        )
 
         boxer_swing = randomizer.gauss(0, swing_factor)
         opponent_swing = randomizer.gauss(0, swing_factor)

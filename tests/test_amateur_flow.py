@@ -30,6 +30,7 @@ def test_amateur_fight_updates_record_and_history() -> None:
     assert state.amateur_progress.fights_taken == 1
     assert len(state.history) == 1
     assert state.history[0].stage == "amateur"
+    assert state.boxer.experience_points > 0
 
 
 def test_generate_opponent_rejects_pro_state() -> None:

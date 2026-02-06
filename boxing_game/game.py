@@ -10,6 +10,7 @@ from boxing_game.modules.amateur_circuit import (
     generate_opponent,
     pro_readiness_status,
 )
+from boxing_game.modules.experience_engine import boxer_experience_profile, total_career_fights
 from boxing_game.modules.attribute_engine import training_gain
 from boxing_game.modules.career_clock import advance_month
 from boxing_game.modules.fight_sim_engine import simulate_amateur_fight, simulate_pro_fight
@@ -24,7 +25,13 @@ from boxing_game.modules.pro_career import (
     turn_pro,
 )
 from boxing_game.modules.rating_engine import boxer_overall_rating
-from boxing_game.modules.savegame import SavegameError, list_saves, load_state, save_state
+from boxing_game.modules.savegame import (
+    SavegameError,
+    delete_state,
+    list_saves,
+    load_state,
+    save_state,
+)
 from boxing_game.rules_registry import load_rule_set
 
 
@@ -59,7 +66,13 @@ def _advance_month(state: CareerState, months: int = 1) -> None:
 def _render_stats(state: CareerState) -> None:
     boxer = state.boxer
     stage = "pro" if state.pro_career.is_active else "amateur"
-    overall_rating = boxer_overall_rating(boxer, stage=stage)
+    overall_rating = boxer_overall_rating(
+        boxer,
+        stage=stage,
+        pro_record=state.pro_career.record,
+    )
+    experience = boxer_experience_profile(boxer, pro_record=state.pro_career.record)
+    fights_total = total_career_fights(boxer, pro_record=state.pro_career.record)
     print("\n== Boxer Profile ==")
     print(f"Name: {boxer.profile.name} ({boxer.profile.stance})")
     print(f"Age: {boxer.profile.age}")
@@ -68,6 +81,20 @@ def _render_stats(state: CareerState) -> None:
     )
     print(f"Division: {boxer.division}")
     print(f"Overall Rating: {overall_rating}")
+    print(
+        (
+            f"Experience: {experience.points} XP | "
+            f"Level {experience.level} ({experience.title}) | "
+            f"Fight Bonus +{experience.fight_bonus:.2f}"
+        )
+    )
+    if experience.next_level_points is None:
+        print("Experience Progress: max level reached.")
+    else:
+        print(
+            f"Experience Progress: {experience.points}/{experience.next_level_points} to next level"
+        )
+    print(f"Career Fights: {fights_total}")
 
     if state.pro_career.is_active:
         pro_record = state.pro_career.record
@@ -132,29 +159,52 @@ def _new_career() -> CareerState:
 
 
 def _load_career() -> CareerState | None:
-    slots = list_saves()
-    if not slots:
-        print("No saves found.")
+    while True:
+        slots = list_saves()
+        if not slots:
+            print("No saves found.")
+            return None
+
+        print("\nAvailable saves:")
+        for idx, slot in enumerate(slots, start=1):
+            print(f"{idx}. {slot}")
+
+        choice = _prompt_int("Choose save number: ", 1, len(slots))
+        selected = slots[choice - 1]
+
+        print(f"\nSelected: {selected}")
+        print("1. Load save")
+        print("2. Delete save")
+        print("3. Back")
+        action = _prompt_int("Choose action: ", 1, 3)
+
+        if action == 1:
+            try:
+                state = load_state(selected)
+            except SavegameError as exc:
+                print(f"Failed to load: {exc}")
+                return None
+
+            if state.pro_career.is_active:
+                ensure_rankings(state)
+
+            print(f"Loaded save: {selected}")
+            return state
+
+        if action == 2:
+            confirm = input(f"Delete '{selected}'? This cannot be undone. (y/n): ").strip().lower()
+            if confirm not in {"y", "yes"}:
+                print("Delete canceled.")
+                continue
+            try:
+                delete_state(selected)
+            except SavegameError as exc:
+                print(f"Delete failed: {exc}")
+                return None
+            print(f"Deleted save: {selected}")
+            continue
+
         return None
-
-    print("\nAvailable saves:")
-    for idx, slot in enumerate(slots, start=1):
-        print(f"{idx}. {slot}")
-
-    choice = _prompt_int("Choose save number: ", 1, len(slots))
-    selected = slots[choice - 1]
-
-    try:
-        state = load_state(selected)
-    except SavegameError as exc:
-        print(f"Failed to load: {exc}")
-        return None
-
-    if state.pro_career.is_active:
-        ensure_rankings(state)
-
-    print(f"Loaded save: {selected}")
-    return state
 
 
 def _save_career(state: CareerState) -> None:
@@ -219,13 +269,17 @@ def _run_amateur_fight(state: CareerState, rng: random.Random) -> None:
         rng=rng,
     )
 
+    xp_before = state.boxer.experience_points
     apply_fight_result(state, opponent, result)
+    xp_gain = state.boxer.experience_points - xp_before
+    experience = boxer_experience_profile(state.boxer, pro_record=state.pro_career.record)
     _advance_month(state)
 
     print("\n== Fight Result ==")
     print(f"Winner: {result.winner}")
     print(f"Method: {result.method}")
     print(f"Rounds Completed: {result.rounds_completed}")
+    print(f"Experience gained: +{xp_gain} XP ({experience.title})")
 
     if result.scorecards:
         for idx, score in enumerate(result.scorecards, start=1):
@@ -268,7 +322,10 @@ def _run_pro_fight(state: CareerState, rng: random.Random) -> None:
         rng=rng,
     )
 
+    xp_before = state.boxer.experience_points
     new_rank = apply_pro_fight_result(state, opponent, result, purse)
+    xp_gain = state.boxer.experience_points - xp_before
+    experience = boxer_experience_profile(state.boxer, pro_record=state.pro_career.record)
     _advance_month(state)
 
     print("\n== Pro Fight Result ==")
@@ -278,6 +335,7 @@ def _run_pro_fight(state: CareerState, rng: random.Random) -> None:
     rank_label = f"#{new_rank}" if new_rank is not None else "Unranked"
     print(f"{state.pro_career.organization_focus} Rank: {rank_label}")
     print(f"Balance: ${state.pro_career.purse_balance:,.2f}")
+    print(f"Experience gained: +{xp_gain} XP ({experience.title})")
 
 
 def _rest(state: CareerState) -> None:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import random
 import sys
 from pathlib import Path
@@ -51,6 +52,7 @@ from boxing_game.modules.amateur_circuit import (
 )
 from boxing_game.modules.attribute_engine import training_gain
 from boxing_game.modules.career_clock import advance_month
+from boxing_game.modules.experience_engine import boxer_experience_profile, total_career_fights
 from boxing_game.modules.fight_sim_engine import simulate_amateur_fight, simulate_pro_fight
 from boxing_game.modules.player_profile import create_boxer
 from boxing_game.modules.pro_career import (
@@ -64,7 +66,17 @@ from boxing_game.modules.pro_career import (
     turn_pro,
 )
 from boxing_game.modules.rating_engine import boxer_overall_rating
-from boxing_game.modules.savegame import SavegameError, list_saves, load_state, save_state
+from boxing_game.modules.savegame import (
+    SaveMetadata,
+    SavegameError,
+    delete_state,
+    duplicate_state,
+    list_saves,
+    list_save_metadata,
+    load_state,
+    rename_state,
+    save_state,
+)
 from boxing_game.rules_registry import load_rule_set
 
 
@@ -84,11 +96,13 @@ class BoxingGameWindow(QMainWindow):
         self.create_page = self._build_create_page()
         self.career_page = self._build_career_page()
         self.rankings_page = self._build_rankings_page()
+        self.manage_saves_page = self._build_manage_saves_page()
 
         self.stack.addWidget(self.menu_page)
         self.stack.addWidget(self.create_page)
         self.stack.addWidget(self.career_page)
         self.stack.addWidget(self.rankings_page)
+        self.stack.addWidget(self.manage_saves_page)
         self.stack.setCurrentWidget(self.menu_page)
 
     def _build_menu_page(self) -> QWidget:
@@ -109,10 +123,12 @@ class BoxingGameWindow(QMainWindow):
         new_button.clicked.connect(self._show_create_page)
         load_button = QPushButton("Load Career")
         load_button.clicked.connect(self._load_career)
+        manage_button = QPushButton("Manage Saves")
+        manage_button.clicked.connect(self._show_manage_saves_page)
         quit_button = QPushButton("Quit")
         quit_button.clicked.connect(self.close)
 
-        for button in (new_button, load_button, quit_button):
+        for button in (new_button, load_button, manage_button, quit_button):
             button.setMinimumHeight(44)
             button_col.addWidget(button)
 
@@ -303,6 +319,69 @@ class BoxingGameWindow(QMainWindow):
         layout.addWidget(self.rankings_view, 1)
         return page
 
+    def _build_manage_saves_page(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(24, 18, 24, 18)
+        layout.setSpacing(12)
+
+        self.manage_saves_header = QLabel("Manage Saves")
+        self.manage_saves_header.setStyleSheet("font-size: 24px; font-weight: 700;")
+        self.manage_saves_subtitle = QLabel("")
+        self.manage_saves_subtitle.setWordWrap(True)
+        self.manage_saves_subtitle.setStyleSheet("font-size: 13px; color: #4f5d75;")
+
+        layout.addWidget(self.manage_saves_header)
+        layout.addWidget(self.manage_saves_subtitle)
+
+        controls = QHBoxLayout()
+        controls.setSpacing(8)
+
+        controls.addWidget(QLabel("Save Slot"))
+        self.manage_saves_slot_combo = QComboBox()
+        self.manage_saves_slot_combo.currentTextChanged.connect(self._refresh_manage_save_details)
+        controls.addWidget(self.manage_saves_slot_combo, 1)
+
+        refresh_button = QPushButton("Refresh")
+        refresh_button.clicked.connect(self._refresh_manage_saves_page)
+        controls.addWidget(refresh_button)
+
+        back_button = QPushButton("Back to Menu")
+        back_button.clicked.connect(self._show_menu_page)
+        controls.addWidget(back_button)
+        layout.addLayout(controls)
+
+        action_row = QHBoxLayout()
+        action_row.setSpacing(8)
+
+        self.manage_load_button = QPushButton("Load")
+        self.manage_load_button.clicked.connect(self._load_selected_save_from_manage)
+        self.manage_rename_button = QPushButton("Rename")
+        self.manage_rename_button.clicked.connect(self._rename_selected_save_from_manage)
+        self.manage_duplicate_button = QPushButton("Duplicate")
+        self.manage_duplicate_button.clicked.connect(self._duplicate_selected_save_from_manage)
+        self.manage_delete_button = QPushButton("Delete")
+        self.manage_delete_button.clicked.connect(self._delete_selected_save_from_manage)
+
+        for button in (
+            self.manage_load_button,
+            self.manage_rename_button,
+            self.manage_duplicate_button,
+            self.manage_delete_button,
+        ):
+            button.setMinimumHeight(40)
+            action_row.addWidget(button)
+        action_row.addStretch(1)
+        layout.addLayout(action_row)
+
+        self.manage_saves_details_view = QPlainTextEdit()
+        self.manage_saves_details_view.setReadOnly(True)
+        self.manage_saves_details_view.setPlaceholderText("Save metadata will appear here.")
+        layout.addWidget(self.manage_saves_details_view, 1)
+
+        self._manage_save_by_slot: dict[str, SaveMetadata] = {}
+        return page
+
     def _show_menu_page(self) -> None:
         self.stack.setCurrentWidget(self.menu_page)
 
@@ -321,6 +400,10 @@ class BoxingGameWindow(QMainWindow):
         self._refresh_rankings_page()
         self.stack.setCurrentWidget(self.rankings_page)
 
+    def _show_manage_saves_page(self) -> None:
+        self._refresh_manage_saves_page()
+        self.stack.setCurrentWidget(self.manage_saves_page)
+
     def _set_state(self, state: CareerState) -> None:
         self.state = state
         self._refresh_career_view()
@@ -334,6 +417,180 @@ class BoxingGameWindow(QMainWindow):
 
     def _append_log(self, message: str) -> None:
         self.event_log.appendPlainText(message)
+
+    def _format_saved_at(self, saved_at: str) -> str:
+        if not saved_at:
+            return "Unknown"
+        try:
+            parsed = datetime.fromisoformat(saved_at)
+        except ValueError:
+            return saved_at
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        local_dt = parsed.astimezone()
+        return local_dt.strftime("%Y-%m-%d %H:%M:%S %Z")
+
+    def _selected_manage_slot(self) -> str:
+        return self.manage_saves_slot_combo.currentText().strip()
+
+    def _refresh_manage_saves_page(self, preferred_slot: str | None = None) -> None:
+        previous_slot = self._selected_manage_slot()
+        metadata = list_save_metadata()
+        self._manage_save_by_slot = {item.slot: item for item in metadata}
+
+        self.manage_saves_slot_combo.blockSignals(True)
+        self.manage_saves_slot_combo.clear()
+        for item in metadata:
+            self.manage_saves_slot_combo.addItem(item.slot)
+
+        chosen = preferred_slot.strip() if preferred_slot else ""
+        if not chosen:
+            chosen = previous_slot
+        if chosen and chosen in self._manage_save_by_slot:
+            idx = self.manage_saves_slot_combo.findText(chosen)
+            if idx >= 0:
+                self.manage_saves_slot_combo.setCurrentIndex(idx)
+        self.manage_saves_slot_combo.blockSignals(False)
+
+        count = len(metadata)
+        self.manage_saves_subtitle.setText(f"Total save slots: {count}")
+        self._refresh_manage_save_details()
+
+    def _refresh_manage_save_details(self, *_: object) -> None:
+        slot = self._selected_manage_slot()
+        meta = self._manage_save_by_slot.get(slot)
+        if meta is None:
+            self.manage_load_button.setEnabled(False)
+            self.manage_rename_button.setEnabled(False)
+            self.manage_duplicate_button.setEnabled(False)
+            self.manage_delete_button.setEnabled(False)
+            self.manage_saves_details_view.setPlainText("No saves available.")
+            return
+
+        self.manage_load_button.setEnabled(meta.is_valid)
+        self.manage_rename_button.setEnabled(True)
+        self.manage_duplicate_button.setEnabled(True)
+        self.manage_delete_button.setEnabled(True)
+
+        stage = "Pro" if meta.is_pro else "Amateur"
+        if meta.is_pro is None:
+            stage = "Unknown"
+        lines = [
+            f"Slot: {meta.slot}",
+            f"Last Played: {self._format_saved_at(meta.saved_at)}",
+            f"Version: {meta.version if meta.version is not None else 'Unknown'}",
+            f"Boxer: {meta.boxer_name or 'Unknown'}",
+            f"Age: {meta.age if meta.age is not None else 'Unknown'}",
+            f"Division: {meta.division or 'Unknown'}",
+            f"Career Calendar: Month {meta.month if meta.month is not None else '?'}"
+            f", Year {meta.year if meta.year is not None else '?'}",
+            f"Stage: {stage}",
+            f"Path: {meta.path}",
+        ]
+        if not meta.is_valid:
+            lines.extend(["", f"Save Error: {meta.error or 'Unknown metadata error'}"])
+        self.manage_saves_details_view.setPlainText("\n".join(lines))
+
+    def _load_selected_save_from_manage(self) -> None:
+        slot = self._selected_manage_slot()
+        if not slot:
+            return
+        try:
+            state = load_state(slot)
+        except SavegameError as exc:
+            QMessageBox.critical(self, "Load Failed", str(exc))
+            return
+
+        if state.pro_career.is_active:
+            ensure_rankings(state)
+
+        self._set_state(state)
+        self.event_log.clear()
+        self._append_log(f"Loaded save slot: {slot}")
+
+    def _rename_selected_save_from_manage(self) -> None:
+        slot = self._selected_manage_slot()
+        if not slot:
+            return
+
+        suggested = f"{slot}_renamed"
+        new_slot, ok = QInputDialog.getText(
+            self,
+            "Rename Save",
+            "New slot name:",
+            text=suggested,
+        )
+        if not ok:
+            return
+
+        target = new_slot.strip()
+        if not target:
+            QMessageBox.information(self, "Rename Save", "New slot name is required.")
+            return
+
+        try:
+            rename_state(slot, target)
+        except SavegameError as exc:
+            QMessageBox.critical(self, "Rename Failed", str(exc))
+            return
+
+        QMessageBox.information(self, "Rename Save", f"Renamed '{slot}' to '{target}'.")
+        self._append_log(f"Renamed save slot: {slot} -> {target}")
+        self._refresh_manage_saves_page(preferred_slot=target)
+
+    def _duplicate_selected_save_from_manage(self) -> None:
+        slot = self._selected_manage_slot()
+        if not slot:
+            return
+
+        suggested = f"{slot}_copy"
+        new_slot, ok = QInputDialog.getText(
+            self,
+            "Duplicate Save",
+            "Duplicate into slot:",
+            text=suggested,
+        )
+        if not ok:
+            return
+
+        target = new_slot.strip()
+        if not target:
+            QMessageBox.information(self, "Duplicate Save", "Destination slot name is required.")
+            return
+
+        try:
+            duplicate_state(slot, target)
+        except SavegameError as exc:
+            QMessageBox.critical(self, "Duplicate Failed", str(exc))
+            return
+
+        QMessageBox.information(self, "Duplicate Save", f"Created duplicate slot '{target}'.")
+        self._append_log(f"Duplicated save slot: {slot} -> {target}")
+        self._refresh_manage_saves_page(preferred_slot=target)
+
+    def _delete_selected_save_from_manage(self) -> None:
+        slot = self._selected_manage_slot()
+        if not slot:
+            return
+
+        confirm = QMessageBox.question(
+            self,
+            "Delete Save",
+            f"Delete save slot '{slot}'? This cannot be undone.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+
+        try:
+            delete_state(slot)
+        except SavegameError as exc:
+            QMessageBox.critical(self, "Delete Failed", str(exc))
+            return
+        QMessageBox.information(self, "Delete Save", f"Deleted save slot: {slot}")
+        self._append_log(f"Deleted save slot: {slot}")
+        self._refresh_manage_saves_page()
 
     def _refresh_rankings_page(self, *_: object) -> None:
         if self.state is None:
@@ -410,34 +667,66 @@ class BoxingGameWindow(QMainWindow):
         )
 
     def _load_career(self) -> None:
-        slots = list_saves()
-        if not slots:
-            QMessageBox.information(self, "Load Career", "No saves found.")
-            return
+        while True:
+            slots = list_saves()
+            if not slots:
+                QMessageBox.information(self, "Load Career", "No saves found.")
+                return
 
-        slot, ok = QInputDialog.getItem(
-            self,
-            "Load Career",
-            "Choose save slot:",
-            slots,
-            0,
-            False,
-        )
-        if not ok or not slot:
-            return
+            slot, ok = QInputDialog.getItem(
+                self,
+                "Load Career",
+                "Choose save slot:",
+                slots,
+                0,
+                False,
+            )
+            if not ok or not slot:
+                return
 
-        try:
-            state = load_state(slot)
-        except SavegameError as exc:
-            QMessageBox.critical(self, "Load Failed", str(exc))
-            return
+            action, action_ok = QInputDialog.getItem(
+                self,
+                "Save Action",
+                f"Choose action for '{slot}':",
+                ["Load", "Delete"],
+                0,
+                False,
+            )
+            if not action_ok or not action:
+                return
 
-        if state.pro_career.is_active:
-            ensure_rankings(state)
+            if action == "Load":
+                try:
+                    state = load_state(slot)
+                except SavegameError as exc:
+                    QMessageBox.critical(self, "Load Failed", str(exc))
+                    return
 
-        self._set_state(state)
-        self.event_log.clear()
-        self._append_log(f"Loaded save slot: {slot}")
+                if state.pro_career.is_active:
+                    ensure_rankings(state)
+
+                self._set_state(state)
+                self.event_log.clear()
+                self._append_log(f"Loaded save slot: {slot}")
+                return
+
+            confirm = QMessageBox.question(
+                self,
+                "Delete Save",
+                f"Delete save slot '{slot}'? This cannot be undone.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if confirm != QMessageBox.StandardButton.Yes:
+                continue
+
+            try:
+                delete_state(slot)
+            except SavegameError as exc:
+                QMessageBox.critical(self, "Delete Failed", str(exc))
+                return
+            QMessageBox.information(self, "Delete Save", f"Deleted save slot: {slot}")
+            self._append_log(f"Deleted save slot: {slot}")
 
     def _save_career(self) -> None:
         if self.state is None:
@@ -528,7 +817,13 @@ class BoxingGameWindow(QMainWindow):
             rounds=int(tier["rounds"]),
             rng=self.rng,
         )
+        xp_before = self.state.boxer.experience_points
         apply_fight_result(self.state, opponent, result)
+        xp_gain = self.state.boxer.experience_points - xp_before
+        experience = boxer_experience_profile(
+            self.state.boxer,
+            pro_record=self.state.pro_career.record,
+        )
         self._advance_month(1)
         self._refresh_career_view()
 
@@ -538,12 +833,18 @@ class BoxingGameWindow(QMainWindow):
             f"Winner: {result.winner}\n"
             f"Method: {result.method}\n"
             f"Rounds Completed: {result.rounds_completed}\n\n"
+            f"Experience Gained: +{xp_gain} XP ({experience.title})\n\n"
             f"Scorecards:\n{scorecard_lines}\n\n"
             f"Round Log:\n{round_lines}"
         )
 
         QMessageBox.information(self, "Fight Result", outcome)
-        self._append_log(f"Fight complete vs {opponent.name}: {result.method} ({result.winner}).")
+        self._append_log(
+            (
+                f"Fight complete vs {opponent.name}: {result.method} ({result.winner}) | "
+                f"+{xp_gain} XP ({experience.title})"
+            )
+        )
 
     def _turn_pro(self) -> None:
         if self.state is None:
@@ -610,7 +911,13 @@ class BoxingGameWindow(QMainWindow):
             rounds=int(tier["rounds"]),
             rng=self.rng,
         )
+        xp_before = self.state.boxer.experience_points
         new_rank = apply_pro_fight_result(self.state, opponent, result, purse)
+        xp_gain = self.state.boxer.experience_points - xp_before
+        experience = boxer_experience_profile(
+            self.state.boxer,
+            pro_record=self.state.pro_career.record,
+        )
         self._advance_month(1)
         self._refresh_career_view()
 
@@ -625,6 +932,7 @@ class BoxingGameWindow(QMainWindow):
             f"Gross Purse: ${purse['gross']:,.2f}\n"
             f"Total Expenses: ${purse['total_expenses']:,.2f}\n"
             f"Net Purse Added: ${purse['net']:,.2f}\n\n"
+            f"Experience Gained: +{xp_gain} XP ({experience.title})\n\n"
             f"Scorecards:\n{scorecard_lines}\n\n"
             f"Round Log:\n{round_lines}"
         )
@@ -633,7 +941,7 @@ class BoxingGameWindow(QMainWindow):
         self._append_log(
             (
                 f"Pro fight vs {opponent.name}: {result.method} ({result.winner}) | "
-                f"Net ${purse['net']:,.2f} | Rank {rank_label}"
+                f"Net ${purse['net']:,.2f} | Rank {rank_label} | +{xp_gain} XP ({experience.title})"
             )
         )
 
@@ -644,7 +952,16 @@ class BoxingGameWindow(QMainWindow):
         boxer = self.state.boxer
         is_pro = self.state.pro_career.is_active
         stage = "pro" if is_pro else "amateur"
-        overall_rating = boxer_overall_rating(boxer, stage=stage)
+        overall_rating = boxer_overall_rating(
+            boxer,
+            stage=stage,
+            pro_record=self.state.pro_career.record,
+        )
+        experience = boxer_experience_profile(
+            boxer,
+            pro_record=self.state.pro_career.record,
+        )
+        fights_total = total_career_fights(boxer, pro_record=self.state.pro_career.record)
         amateur_record = boxer.record
         pro_record = self.state.pro_career.record
 
@@ -680,7 +997,8 @@ class BoxingGameWindow(QMainWindow):
         self.career_status.setText(
             (
                 f"Amateur Points: {boxer.amateur_points} | Popularity: {boxer.popularity} | "
-                f"Fatigue: {boxer.fatigue} | Pro Ready: {pro_ready_flag} | "
+                f"Fatigue: {boxer.fatigue} | Experience: {experience.points} XP ({experience.title}) | "
+                f"Pro Ready: {pro_ready_flag} | "
                 f"Gate Age {readiness.current_age}/{readiness.min_age}, "
                 f"Fights {readiness.current_fights}/{readiness.min_fights}, "
                 f"Points {readiness.current_points}/{readiness.min_points}"
@@ -697,6 +1015,18 @@ class BoxingGameWindow(QMainWindow):
             ),
             f"Reach: {boxer.profile.reach_in} in",
             f"Overall Rating: {overall_rating}",
+            (
+                f"Experience: {experience.points} XP | "
+                f"Level {experience.level} ({experience.title}) | "
+                f"Fight Bonus +{experience.fight_bonus:.2f}"
+            ),
+            (
+                "Next Level At: "
+                f"{experience.next_level_points} XP"
+                if experience.next_level_points is not None
+                else "Next Level At: MAX"
+            ),
+            f"Career Fights: {fights_total}",
             "",
             (
                 "Amateur Record: "

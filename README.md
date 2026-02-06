@@ -34,10 +34,12 @@ python3 -m boxing_game.gui
 - Dedicated GUI rankings page with organization selector and top-board view
 - Round-based amateur fight simulation with judges and stoppages
 - Round-based pro fight simulation with separate pro model
+- Fight-based experience system with level titles and in-fight composure bonus
 - Training and fatigue loop
 - Month-based aging with birthday progression and age effects
 - Legacy save migration that backfills age progression from career calendar
-- Save/load career state as JSON
+- Save/load/delete career state as JSON
+- Dedicated GUI save-management page (load/delete/rename/duplicate + metadata)
 
 ## Module Boundaries
 
@@ -45,6 +47,7 @@ python3 -m boxing_game.gui
 - `boxing_game/modules/attribute_engine.py`: stat generation and training gains
 - `boxing_game/modules/weight_class_engine.py`: weight class assignment
 - `boxing_game/modules/fight_sim_engine.py`: fight simulation
+- `boxing_game/modules/experience_engine.py`: experience gain, levels, and fight bonus
 - `boxing_game/modules/amateur_circuit.py`: opponent generation and progression
 - `boxing_game/modules/pro_career.py`: pro transition, pro opponents, rankings, finances
 - `boxing_game/modules/rating_engine.py`: weighted overall boxer rating
@@ -62,6 +65,7 @@ Gameplay values are externalized in:
 - `rules/attribute_model.json`
 - `rules/amateur_progression.json`
 - `rules/fight_model.json`
+- `rules/experience_model.json`
 - `rules/pro_career.json`
 - `rules/aging_model.json`
 
@@ -82,11 +86,14 @@ Current readiness gate (from `rules/amateur_progression.json`):
 - Purse offers now include `total_expenses` and shared formatted breakdown output.
 - Save files now include version checks with compatibility guardrails.
 - Save writes are now atomic and load errors are normalized with clear save-specific messages.
+- Added save metadata listing and slot operations (rename/duplicate/delete) through a dedicated GUI management page.
 - Boxer creation now validates non-empty names.
 - CLI/GUI now surface detailed pro-readiness progress (age, fights, points).
 - Fight simulation now validates round count input (`rounds >= 1`).
 - Boxer profile now shows an overall rating derived from weighted fight attributes.
 - Added deterministic rankings snapshot generation used by the GUI rankings page.
+- Added an experience progression system tied to fight count/results and integrated into rating/fight sim.
+- Legacy saves now backfill missing `experience_points` from total recorded fights.
 - Added `.gitignore` for Python/runtime artifacts.
 - Expanded automated tests for pro flow, save compatibility, validation, aging edge cases, and readiness reporting.
 

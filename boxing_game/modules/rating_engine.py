@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from boxing_game.models import Boxer, Stats
+from boxing_game.models import Boxer, CareerRecord, Stats
+from boxing_game.modules.experience_engine import boxer_experience_profile
 from boxing_game.rules_registry import load_rule_set
 
 
@@ -24,8 +25,18 @@ def _weighted_rating(stats: Stats, model_key: str) -> int:
     return max(20, min(99, int(round(weighted_total / weight_sum))))
 
 
-def boxer_overall_rating(boxer: Boxer, *, stage: str) -> int:
+def boxer_overall_rating(
+    boxer: Boxer,
+    *,
+    stage: str,
+    pro_record: CareerRecord | None = None,
+) -> int:
     model_key = "pro" if stage == "pro" else "amateur"
     base = _weighted_rating(boxer.stats, model_key)
+    experience_bonus = boxer_experience_profile(
+        boxer,
+        pro_record=pro_record,
+    ).fight_bonus
     fatigue_penalty = int(round(boxer.fatigue * 0.5))
-    return max(20, base - fatigue_penalty)
+    adjusted = int(round(base + experience_bonus)) - fatigue_penalty
+    return max(20, min(99, adjusted))

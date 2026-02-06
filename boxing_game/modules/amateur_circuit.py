@@ -13,6 +13,7 @@ from boxing_game.models import (
     Stats,
 )
 from boxing_game.modules.attribute_engine import build_stats
+from boxing_game.modules.experience_engine import add_experience_points, fight_experience_gain
 from boxing_game.modules.weight_class_engine import classify_weight
 from boxing_game.rules_registry import load_rule_set
 
@@ -180,6 +181,14 @@ def apply_fight_result(
         state.boxer.record.losses += 1
         state.boxer.amateur_points += int(points_cfg["loss"])
         state.boxer.popularity = max(1, state.boxer.popularity - 1)
+
+    experience_gain = fight_experience_gain(
+        stage="amateur",
+        boxer_name=boxer_name,
+        opponent_rating=opponent.rating,
+        result=result,
+    )
+    add_experience_points(state.boxer, experience_gain)
 
     state.boxer.fatigue = min(12, state.boxer.fatigue + 3)
 

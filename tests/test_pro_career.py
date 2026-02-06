@@ -103,6 +103,7 @@ def test_turn_pro_and_pro_fight_updates_finances_and_history() -> None:
     assert state.history[0].stage == "pro"
     assert state.pro_career.purse_balance > 0
     assert state.pro_career.total_earnings >= state.pro_career.purse_balance
+    assert state.boxer.experience_points > 0
     focus = state.pro_career.organization_focus
     slots = next(
         int(item["ranking_slots"])
