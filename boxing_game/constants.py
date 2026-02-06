@@ -1,3 +1,3 @@
 """Shared game constants."""
 
-STARTING_AGE = 16
+STARTING_AGE = 15

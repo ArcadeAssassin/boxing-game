@@ -113,6 +113,40 @@ class BoxerProfile:
 
 
 @dataclass
+class AgingProfile:
+    peak_age: int
+    decline_onset_age: int
+    decline_severity: float
+    iq_growth_factor: float
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "peak_age": self.peak_age,
+            "decline_onset_age": self.decline_onset_age,
+            "decline_severity": self.decline_severity,
+            "iq_growth_factor": self.iq_growth_factor,
+        }
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any]) -> "AgingProfile":
+        peak_age = int(payload.get("peak_age", 28))
+        decline_onset_age = int(payload.get("decline_onset_age", peak_age + 2))
+        decline_severity = float(payload.get("decline_severity", 1.0))
+        iq_growth_factor = float(payload.get("iq_growth_factor", 1.0))
+
+        peak_age = max(23, min(35, peak_age))
+        decline_onset_age = max(peak_age, min(40, decline_onset_age))
+        decline_severity = max(0.6, min(1.6, decline_severity))
+        iq_growth_factor = max(0.6, min(1.6, iq_growth_factor))
+        return cls(
+            peak_age=peak_age,
+            decline_onset_age=decline_onset_age,
+            decline_severity=decline_severity,
+            iq_growth_factor=iq_growth_factor,
+        )
+
+
+@dataclass
 class Boxer:
     profile: BoxerProfile
     stats: Stats
@@ -122,6 +156,15 @@ class Boxer:
     popularity: int = 10
     fatigue: int = 0
     experience_points: int = 0
+    injury_risk: int = 0
+    aging_profile: AgingProfile = field(
+        default_factory=lambda: AgingProfile(
+            peak_age=28,
+            decline_onset_age=30,
+            decline_severity=1.0,
+            iq_growth_factor=1.0,
+        )
+    )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -133,6 +176,8 @@ class Boxer:
             "popularity": self.popularity,
             "fatigue": self.fatigue,
             "experience_points": self.experience_points,
+            "injury_risk": self.injury_risk,
+            "aging_profile": self.aging_profile.to_dict(),
         }
 
     @classmethod
@@ -145,6 +190,24 @@ class Boxer:
         else:
             inferred_experience = max(0, int(experience_raw))
 
+        aging_payload = payload.get("aging_profile")
+        if isinstance(aging_payload, dict):
+            aging_profile = AgingProfile.from_dict(aging_payload)
+        else:
+            from boxing_game.modules.aging_engine import generate_aging_profile
+
+            profile_payload = payload.get("profile", {})
+            height_ft = int(profile_payload.get("height_ft", 5))
+            height_in = int(profile_payload.get("height_in", 10))
+            weight_lbs = int(profile_payload.get("weight_lbs", 147))
+            height_inches = (height_ft * 12) + height_in
+            aging_profile = generate_aging_profile(
+                name=str(profile_payload.get("name", "Legacy Boxer")),
+                stance=str(profile_payload.get("stance", "orthodox")),
+                height_inches=height_inches,
+                weight_lbs=weight_lbs,
+            )
+
         return cls(
             profile=BoxerProfile.from_dict(payload["profile"]),
             stats=Stats.from_dict(payload["stats"]),
@@ -154,6 +217,8 @@ class Boxer:
             popularity=int(payload.get("popularity", 10)),
             fatigue=int(payload.get("fatigue", 0)),
             experience_points=inferred_experience,
+            injury_risk=max(0, min(100, int(payload.get("injury_risk", 0)))),
+            aging_profile=aging_profile,
         )
 
 
@@ -169,6 +234,9 @@ class Opponent:
     stats: Stats
     rating: int
     record: CareerRecord = field(default_factory=CareerRecord)
+    ranking_position: int | None = None
+    organization_ranks: dict[str, int | None] = field(default_factory=dict)
+    is_lineal_champion: bool = False
 
     @property
     def height_inches(self) -> int:
@@ -186,6 +254,9 @@ class Opponent:
             "stats": self.stats.to_dict(),
             "rating": self.rating,
             "record": self.record.to_dict(),
+            "ranking_position": self.ranking_position,
+            "organization_ranks": self.organization_ranks,
+            "is_lineal_champion": self.is_lineal_champion,
         }
 
 
@@ -224,6 +295,7 @@ class FightHistoryEntry:
     result: FightResult
     stage: str = "amateur"
     purse: float = 0.0
+    notes: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -232,6 +304,7 @@ class FightHistoryEntry:
             "result": self.result.to_dict(),
             "stage": self.stage,
             "purse": self.purse,
+            "notes": self.notes,
         }
 
     @classmethod
@@ -242,6 +315,7 @@ class FightHistoryEntry:
             result=FightResult.from_dict(payload["result"]),
             stage=str(payload.get("stage", "amateur")),
             purse=float(payload.get("purse", 0.0)),
+            notes=str(payload.get("notes", "")),
         )
 
 
@@ -270,9 +344,18 @@ class ProCareer:
     promoter: str = ""
     organization_focus: str = "WBC"
     rankings: dict[str, int | None] = field(default_factory=dict)
+    organization_champions: dict[str, dict[str, str | None]] = field(default_factory=dict)
+    organization_defenses: dict[str, dict[str, int]] = field(default_factory=dict)
     record: CareerRecord = field(default_factory=CareerRecord)
     purse_balance: float = 0.0
     total_earnings: float = 0.0
+    staff_levels: dict[str, int] = field(default_factory=dict)
+    lineal_champions: dict[str, str | None] = field(default_factory=dict)
+    lineal_defenses: dict[str, int] = field(default_factory=dict)
+    division_changes: int = 0
+    divisions_fought: list[str] = field(default_factory=list)
+    last_world_news: list[str] = field(default_factory=list)
+    last_player_fight_month: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -280,9 +363,18 @@ class ProCareer:
             "promoter": self.promoter,
             "organization_focus": self.organization_focus,
             "rankings": self.rankings,
+            "organization_champions": self.organization_champions,
+            "organization_defenses": self.organization_defenses,
             "record": self.record.to_dict(),
             "purse_balance": self.purse_balance,
             "total_earnings": self.total_earnings,
+            "staff_levels": self.staff_levels,
+            "lineal_champions": self.lineal_champions,
+            "lineal_defenses": self.lineal_defenses,
+            "division_changes": self.division_changes,
+            "divisions_fought": self.divisions_fought,
+            "last_world_news": self.last_world_news,
+            "last_player_fight_month": self.last_player_fight_month,
         }
 
     @classmethod
@@ -293,14 +385,95 @@ class ProCareer:
             for org_name, rank in raw_rankings.items():
                 rankings[str(org_name)] = None if rank is None else int(rank)
 
+        raw_staff_levels = payload.get("staff_levels", {})
+        staff_levels: dict[str, int] = {}
+        if isinstance(raw_staff_levels, dict):
+            for staff_key, level in raw_staff_levels.items():
+                staff_levels[str(staff_key)] = max(0, int(level))
+
+        raw_lineal = payload.get("lineal_champions", {})
+        lineal_champions: dict[str, str | None] = {}
+        if isinstance(raw_lineal, dict):
+            for division, champion in raw_lineal.items():
+                if champion is None:
+                    lineal_champions[str(division)] = None
+                else:
+                    champion_name = str(champion).strip()
+                    lineal_champions[str(division)] = champion_name or None
+
+        raw_defenses = payload.get("lineal_defenses", {})
+        lineal_defenses: dict[str, int] = {}
+        if isinstance(raw_defenses, dict):
+            for division, defenses in raw_defenses.items():
+                lineal_defenses[str(division)] = max(0, int(defenses))
+
+        raw_divisions_fought = payload.get("divisions_fought", [])
+        divisions_fought: list[str] = []
+        if isinstance(raw_divisions_fought, list):
+            for division in raw_divisions_fought:
+                normalized = str(division).strip()
+                if normalized and normalized not in divisions_fought:
+                    divisions_fought.append(normalized)
+
+        raw_org_champions = payload.get("organization_champions", {})
+        organization_champions: dict[str, dict[str, str | None]] = {}
+        if isinstance(raw_org_champions, dict):
+            for org_name, per_division in raw_org_champions.items():
+                org_key = str(org_name).strip().upper()
+                if not org_key or not isinstance(per_division, dict):
+                    continue
+                normalized_divisions: dict[str, str | None] = {}
+                for division, champion in per_division.items():
+                    division_name = str(division).strip().lower()
+                    if not division_name:
+                        continue
+                    if champion is None:
+                        normalized_divisions[division_name] = None
+                    else:
+                        champion_name = str(champion).strip()
+                        normalized_divisions[division_name] = champion_name or None
+                organization_champions[org_key] = normalized_divisions
+
+        raw_org_defenses = payload.get("organization_defenses", {})
+        organization_defenses: dict[str, dict[str, int]] = {}
+        if isinstance(raw_org_defenses, dict):
+            for org_name, per_division in raw_org_defenses.items():
+                org_key = str(org_name).strip().upper()
+                if not org_key or not isinstance(per_division, dict):
+                    continue
+                normalized_divisions: dict[str, int] = {}
+                for division, defenses in per_division.items():
+                    division_name = str(division).strip().lower()
+                    if not division_name:
+                        continue
+                    normalized_divisions[division_name] = max(0, int(defenses))
+                organization_defenses[org_key] = normalized_divisions
+
+        raw_world_news = payload.get("last_world_news", [])
+        last_world_news: list[str] = []
+        if isinstance(raw_world_news, list):
+            for entry in raw_world_news[-20:]:
+                text = str(entry).strip()
+                if text:
+                    last_world_news.append(text)
+
         return cls(
             is_active=bool(payload.get("is_active", False)),
             promoter=str(payload.get("promoter", "")),
             organization_focus=str(payload.get("organization_focus", "WBC")),
             rankings=rankings,
+            organization_champions=organization_champions,
+            organization_defenses=organization_defenses,
             record=CareerRecord.from_dict(payload.get("record", {})),
             purse_balance=float(payload.get("purse_balance", 0.0)),
             total_earnings=float(payload.get("total_earnings", 0.0)),
+            staff_levels=staff_levels,
+            lineal_champions=lineal_champions,
+            lineal_defenses=lineal_defenses,
+            division_changes=max(0, int(payload.get("division_changes", 0))),
+            divisions_fought=divisions_fought,
+            last_world_news=last_world_news,
+            last_player_fight_month=max(0, int(payload.get("last_player_fight_month", 0))),
         )
 
 
@@ -313,6 +486,9 @@ class CareerState:
     amateur_progress: AmateurProgress = field(default_factory=AmateurProgress)
     pro_career: ProCareer = field(default_factory=ProCareer)
     history: list[FightHistoryEntry] = field(default_factory=list)
+    is_retired: bool = False
+    retirement_age: int | None = None
+    retirement_reason: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -323,6 +499,9 @@ class CareerState:
             "amateur_progress": self.amateur_progress.to_dict(),
             "pro_career": self.pro_career.to_dict(),
             "history": [entry.to_dict() for entry in self.history],
+            "is_retired": self.is_retired,
+            "retirement_age": self.retirement_age,
+            "retirement_reason": self.retirement_reason,
         }
 
     @classmethod
@@ -368,4 +547,11 @@ class CareerState:
                 FightHistoryEntry.from_dict(entry)
                 for entry in payload.get("history", [])
             ],
+            is_retired=bool(payload.get("is_retired", False)),
+            retirement_age=(
+                None
+                if payload.get("retirement_age") is None
+                else max(0, int(payload.get("retirement_age")))
+            ),
+            retirement_reason=str(payload.get("retirement_reason", "")),
         )

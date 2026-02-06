@@ -29,8 +29,8 @@
     }
   ],
   "pro_readiness": {
-    "min_age": 19,
-    "min_fights": 18,
-    "min_points": 170
+    "min_age": 18,
+    "min_fights": 10,
+    "min_points": 100
   }
 }

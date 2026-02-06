@@ -30,6 +30,9 @@ def test_save_and_load_round_trip(tmp_path: Path) -> None:
     state = CareerState(boxer=boxer)
     state.boxer.amateur_points = 17
     state.boxer.experience_points = 55
+    state.is_retired = True
+    state.retirement_age = 34
+    state.retirement_reason = "Test retirement reason."
 
     save_state(state, "slot_one", save_dir=tmp_path)
     loaded = load_state("slot_one", save_dir=tmp_path)
@@ -37,6 +40,9 @@ def test_save_and_load_round_trip(tmp_path: Path) -> None:
     assert loaded.boxer.profile.name == "Saver"
     assert loaded.boxer.amateur_points == 17
     assert loaded.boxer.experience_points == 55
+    assert loaded.is_retired is True
+    assert loaded.retirement_age == 34
+    assert loaded.retirement_reason == "Test retirement reason."
     assert list_saves(save_dir=tmp_path) == ["slot_one"]
 
 

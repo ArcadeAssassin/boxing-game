@@ -1,5 +1,6 @@
 {
   "stat_limits": {"min": 20, "max": 95},
+  "decline_acceleration_per_year": 0.04,
   "age_brackets": [
     {"min_age": 19, "max_age": 29, "stat_deltas": {}},
     {"min_age": 30, "max_age": 32, "stat_deltas": {"speed": -1, "footwork": -1, "ring_iq": 1}},

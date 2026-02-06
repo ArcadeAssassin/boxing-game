@@ -1,0 +1,40 @@
+{
+  "special_camp": {
+    "cost": 2800,
+    "training_cycles": 2,
+    "coach_bonus_multiplier": 2,
+    "fatigue_gain": 3,
+    "injury_risk_gain": 5,
+    "months": 1
+  },
+  "medical_recovery": {
+    "cost": 1800,
+    "fatigue_reduction": 6,
+    "injury_risk_reduction": 14,
+    "months": 1
+  },
+  "staff_upgrades": {
+    "elite_coach": {
+      "label": "Elite Coach",
+      "max_level": 2,
+      "cost_by_level": [2200, 5200],
+      "training_focus_bonus_per_level": 1
+    },
+    "nutritionist": {
+      "label": "Nutritionist",
+      "max_level": 2,
+      "cost_by_level": [1800, 4200],
+      "fatigue_gain_reduction_per_level": 1,
+      "rest_recovery_bonus_per_level": 1,
+      "injury_risk_gain_reduction_per_level": 1,
+      "injury_risk_rest_bonus_per_level": 1
+    },
+    "sports_science": {
+      "label": "Sports Science Team",
+      "max_level": 3,
+      "cost_by_level": [3200, 6800, 12000],
+      "age_decline_reduction_per_level": 0.08,
+      "ring_iq_growth_bonus_per_level": 0.06
+    }
+  }
+}

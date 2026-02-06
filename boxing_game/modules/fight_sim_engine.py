@@ -45,6 +45,7 @@ def _simulate_with_model(
     max_ko_chance = float(model["max_ko_chance"])
     stamina_decay = float(model["stamina_decay_per_round"])
     fatigue_penalty = float(model["fatigue_penalty_per_point"])
+    injury_risk_penalty = float(model.get("injury_risk_penalty_per_point", 0.0))
 
     boxer_base_skill = _weighted_skill(boxer.stats, style_weights)
     opponent_base_skill = _weighted_skill(opponent.stats, style_weights)
@@ -62,6 +63,7 @@ def _simulate_with_model(
             boxer_base_skill
             + boxer_experience_bonus
             - (boxer_fatigue * fatigue_penalty)
+            - (boxer.injury_risk * injury_risk_penalty)
         )
         opponent_form = (
             opponent_base_skill

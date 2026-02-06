@@ -14,6 +14,8 @@ from boxing_game.models import (
 )
 from boxing_game.modules.attribute_engine import build_stats
 from boxing_game.modules.experience_engine import add_experience_points, fight_experience_gain
+from boxing_game.modules.fight_aftermath import calculate_post_fight_impact
+from boxing_game.modules.pro_spending import adjusted_fatigue_gain, adjusted_injury_risk_gain
 from boxing_game.modules.weight_class_engine import classify_weight
 from boxing_game.rules_registry import load_rule_set
 
@@ -190,7 +192,16 @@ def apply_fight_result(
     )
     add_experience_points(state.boxer, experience_gain)
 
-    state.boxer.fatigue = min(12, state.boxer.fatigue + 3)
+    impact = calculate_post_fight_impact(
+        stage="amateur",
+        boxer_name=boxer_name,
+        result=result,
+        rounds_scheduled=int(tier["rounds"]),
+    )
+    fatigue_gain = adjusted_fatigue_gain(state, impact.fatigue_gain)
+    injury_gain = adjusted_injury_risk_gain(state, impact.injury_risk_gain)
+    state.boxer.fatigue = min(12, state.boxer.fatigue + fatigue_gain)
+    state.boxer.injury_risk = min(100, state.boxer.injury_risk + injury_gain)
 
     state.history.append(
         FightHistoryEntry(

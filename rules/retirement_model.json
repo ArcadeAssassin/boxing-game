@@ -1,0 +1,34 @@
+{
+  "hard_age_cap": 45,
+  "chance_bounds": {"min": 0.0, "max": 0.35},
+  "age_bands": [
+    {"min_age": 33, "max_age": 34, "base_chance": 0.003},
+    {"min_age": 35, "max_age": 36, "base_chance": 0.008},
+    {"min_age": 37, "max_age": 38, "base_chance": 0.018},
+    {"min_age": 39, "max_age": 40, "base_chance": 0.035},
+    {"min_age": 41, "max_age": 44, "base_chance": 0.06}
+  ],
+  "performance": {
+    "sample_fights_min": 8,
+    "win_rate_low": 0.45,
+    "win_rate_mid": 0.55,
+    "win_rate_high": 0.72,
+    "win_rate_elite": 0.82,
+    "mod_low": 0.02,
+    "mod_mid": 0.01,
+    "mod_high": -0.01,
+    "mod_elite": -0.02,
+    "recent_window": 5,
+    "recent_loss_streak_step": 0.012,
+    "recent_no_win_bonus": 0.015,
+    "injury_threshold": 30,
+    "injury_per_point": 0.0012,
+    "fatigue_threshold": 7,
+    "fatigue_per_point": 0.003,
+    "champion_protection": 0.02,
+    "top_rank_cutoff": 5,
+    "top_rank_protection_per_step": 0.003,
+    "early_career_fights": 12,
+    "early_career_protection": 0.012
+  }
+}

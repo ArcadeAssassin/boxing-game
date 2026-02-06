@@ -24,6 +24,24 @@
     "opponent_rating_bonus": 45,
     "ranking_bonus_per_step": 130
   },
+  "sanctioning_policy": {
+    "include_focus_org_always": true,
+    "cross_body_top_window_prob": 0.58,
+    "cross_body_elite_prob": 0.4,
+    "cross_body_rank_gap_prob": 0.2,
+    "cross_body_single_top10_prob": 0.14,
+    "cross_body_rank_window": 20,
+    "cross_body_elite_cutoff": 15,
+    "cross_body_rank_gap_max": 8,
+    "opponent_cross_rank_presence_prob": 0.52,
+    "opponent_unranked_pool_rank_chance": 0.08,
+    "opponent_cross_rank_jitter": 5,
+    "tier_probability_multipliers": {
+      "prospect": 0.55,
+      "contender": 0.85,
+      "ranked": 1.25
+    }
+  },
   "tiers": [
     {
       "name": "prospect",

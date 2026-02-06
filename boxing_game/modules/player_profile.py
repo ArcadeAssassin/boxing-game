@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from boxing_game.constants import STARTING_AGE
 from boxing_game.models import Boxer, BoxerProfile, CareerRecord
+from boxing_game.modules.aging_engine import generate_aging_profile
 from boxing_game.modules.attribute_engine import build_stats
 from boxing_game.modules.weight_class_engine import classify_weight
 
@@ -57,10 +58,17 @@ def create_boxer(
         weight_lbs=weight_lbs,
         weight_class=weight_class,
     )
+    aging_profile = generate_aging_profile(
+        name=normalized_name,
+        stance=normalized_stance,
+        height_inches=height_inches,
+        weight_lbs=weight_lbs,
+    )
 
     return Boxer(
         profile=profile,
         stats=stats,
         division=weight_class.name,
         record=CareerRecord(),
+        aging_profile=aging_profile,
     )
