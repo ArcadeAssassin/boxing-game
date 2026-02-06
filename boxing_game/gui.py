@@ -224,23 +224,54 @@ class BoxingGameWindow(QMainWindow):
         content_row = QHBoxLayout()
         content_row.setSpacing(12)
 
+        stats_and_train = QHBoxLayout()
+        stats_and_train.setSpacing(8)
+
         self.stats_view = QPlainTextEdit()
         self.stats_view.setReadOnly(True)
         self.stats_view.setPlaceholderText("Stats")
+        stats_and_train.addWidget(self.stats_view, 3)
+
+        self.training_panel = QFrame()
+        self.training_panel.setFrameShape(QFrame.Shape.StyledPanel)
+        training_layout = QVBoxLayout(self.training_panel)
+        training_layout.setContentsMargins(8, 8, 8, 8)
+        training_layout.setSpacing(6)
+
+        training_title = QLabel("Train Focus")
+        training_title.setStyleSheet("font-size: 14px; font-weight: 700;")
+        training_hint = QLabel("Click a stat to train it for one month.")
+        training_hint.setWordWrap(True)
+        training_hint.setStyleSheet("font-size: 12px; color: #4f5d75;")
+
+        training_layout.addWidget(training_title)
+        training_layout.addWidget(training_hint)
+
+        self.training_focus_buttons: dict[str, QPushButton] = {}
+        focuses = [str(item) for item in load_rule_set("attribute_model")["training_focuses"]]
+        for focus in focuses:
+            button = QPushButton(focus.replace("_", " ").title())
+            button.setMinimumHeight(32)
+            button.clicked.connect(
+                lambda _checked=False, selected_focus=focus: self._train_focus(selected_focus)
+            )
+            self.training_focus_buttons[focus] = button
+            training_layout.addWidget(button)
+
+        training_layout.addStretch(1)
+        stats_and_train.addWidget(self.training_panel, 2)
 
         self.history_view = QPlainTextEdit()
         self.history_view.setReadOnly(True)
         self.history_view.setPlaceholderText("Fight history")
 
-        content_row.addWidget(self.stats_view, 1)
+        content_row.addLayout(stats_and_train, 2)
         content_row.addWidget(self.history_view, 1)
         root.addLayout(content_row, 1)
 
         button_row = QHBoxLayout()
         button_row.setSpacing(8)
 
-        train_button = QPushButton("Train")
-        train_button.clicked.connect(self._train)
         self.amateur_fight_button = QPushButton("Amateur Fight")
         self.amateur_fight_button.clicked.connect(self._take_amateur_fight)
         self.turn_pro_button = QPushButton("Turn Pro")
@@ -257,7 +288,6 @@ class BoxingGameWindow(QMainWindow):
         back_button.clicked.connect(self._show_menu_page)
 
         for button in (
-            train_button,
             self.amateur_fight_button,
             self.turn_pro_button,
             self.pro_fight_button,
@@ -752,20 +782,13 @@ class BoxingGameWindow(QMainWindow):
         self._append_log(f"Saved career to {path.name}")
         QMessageBox.information(self, "Save Career", f"Saved to {path}")
 
-    def _train(self) -> None:
+    def _train_focus(self, focus: str) -> None:
         if self.state is None:
             return
 
-        focuses = list(load_rule_set("attribute_model")["training_focuses"])
-        focus, ok = QInputDialog.getItem(
-            self,
-            "Training",
-            "Choose focus:",
-            focuses,
-            0,
-            False,
-        )
-        if not ok or not focus:
+        focuses = {str(item) for item in load_rule_set("attribute_model")["training_focuses"]}
+        if focus not in focuses:
+            QMessageBox.information(self, "Training", f"Unknown training focus: {focus}")
             return
 
         self.state.boxer.stats = training_gain(self.state.boxer.stats, focus)

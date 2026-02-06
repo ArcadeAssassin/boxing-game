@@ -35,6 +35,7 @@ python3 -m boxing_game.gui
 - Round-based amateur fight simulation with judges and stoppages
 - Round-based pro fight simulation with separate pro model
 - Fight-based experience system with level titles and in-fight composure bonus
+- Inline GUI stat-training buttons beside the stats panel (no focus dropdown)
 - Training and fatigue loop
 - Month-based aging with birthday progression and age effects
 - Legacy save migration that backfills age progression from career calendar
