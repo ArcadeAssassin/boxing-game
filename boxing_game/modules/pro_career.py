@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import random
+from dataclasses import dataclass
 
 from boxing_game.models import (
     CareerRecord,
@@ -13,8 +14,20 @@ from boxing_game.models import (
 )
 from boxing_game.modules.amateur_circuit import FIRST_NAMES, LAST_NAMES, STANCE_CHOICES, pro_ready
 from boxing_game.modules.attribute_engine import build_stats
+from boxing_game.modules.rating_engine import boxer_overall_rating
 from boxing_game.modules.weight_class_engine import classify_weight
 from boxing_game.rules_registry import load_rule_set
+
+
+@dataclass(frozen=True)
+class RankingEntry:
+    rank: int
+    name: str
+    rating: int
+    wins: int
+    losses: int
+    draws: int
+    is_player: bool = False
 
 
 def _clamp_stat(value: int) -> int:
@@ -71,6 +84,99 @@ def ensure_rankings(state: CareerState) -> None:
     for name in canonical:
         if name not in state.pro_career.rankings:
             state.pro_career.rankings[name] = None
+
+
+def _unique_ranked_name(randomizer: random.Random, used_names: set[str]) -> str:
+    for _ in range(32):
+        candidate = f"{randomizer.choice(FIRST_NAMES)} {randomizer.choice(LAST_NAMES)}"
+        if candidate not in used_names:
+            used_names.add(candidate)
+            return candidate
+
+    idx = len(used_names) + 1
+    fallback = f"Contender {idx}"
+    used_names.add(fallback)
+    return fallback
+
+
+def rankings_snapshot(
+    state: CareerState,
+    organization: str,
+    *,
+    top_n: int = 15,
+) -> list[RankingEntry]:
+    if not state.pro_career.is_active:
+        raise ValueError("Rankings are available after turning pro.")
+    if top_n < 1:
+        raise ValueError("top_n must be >= 1.")
+
+    ensure_rankings(state)
+    organization_name = organization.strip().upper()
+    if organization_name not in _organization_names():
+        raise ValueError(f"Unknown organization: {organization_name}")
+
+    ranking_slots = _ranking_slots(organization_name)
+    visible_count = min(top_n, ranking_slots)
+    player_rank = state.pro_career.rankings.get(organization_name)
+    player_record = state.pro_career.record
+    player_rating = boxer_overall_rating(state.boxer, stage="pro")
+
+    seed = (
+        f"{state.boxer.profile.name}:{organization_name}:{state.year}:"
+        f"{state.month}:{_total_pro_fights(state)}"
+    )
+    randomizer = random.Random(seed)
+    used_names = {state.boxer.profile.name}
+
+    entries: list[RankingEntry] = []
+    for rank in range(1, ranking_slots + 1):
+        if player_rank is not None and rank == player_rank:
+            entries.append(
+                RankingEntry(
+                    rank=rank,
+                    name=state.boxer.profile.name,
+                    rating=player_rating,
+                    wins=player_record.wins,
+                    losses=player_record.losses,
+                    draws=player_record.draws,
+                    is_player=True,
+                )
+            )
+            continue
+
+        name = _unique_ranked_name(randomizer, used_names)
+        rating = max(55, min(98, int(round(96 - ((rank - 1) * 0.95) + randomizer.gauss(0, 1.2)))))
+        wins = max(8, 30 - rank + randomizer.randint(0, 16))
+        losses = max(0, (rank // 8) + randomizer.randint(0, 5))
+        draws = randomizer.randint(0, 3)
+        entries.append(
+            RankingEntry(
+                rank=rank,
+                name=name,
+                rating=rating,
+                wins=wins,
+                losses=losses,
+                draws=draws,
+                is_player=False,
+            )
+        )
+
+    visible_entries = entries[:visible_count]
+    if player_rank is not None and player_rank > visible_count:
+        visible_entries.append(entries[player_rank - 1])
+    elif player_rank is None:
+        visible_entries.append(
+            RankingEntry(
+                rank=0,
+                name=state.boxer.profile.name,
+                rating=player_rating,
+                wins=player_record.wins,
+                losses=player_record.losses,
+                draws=player_record.draws,
+                is_player=True,
+            )
+        )
+    return visible_entries
 
 
 def turn_pro(state: CareerState, rng: random.Random | None = None) -> dict[str, str | int]:

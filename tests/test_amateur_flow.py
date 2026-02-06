@@ -45,3 +45,19 @@ def test_generate_opponent_rejects_pro_state() -> None:
 
     with pytest.raises(ValueError, match="Amateur opponents are unavailable"):
         generate_opponent(state, rng=random.Random(1))
+
+
+def test_simulate_amateur_fight_rejects_invalid_round_count() -> None:
+    rng = random.Random(7)
+    boxer = create_boxer(
+        name="Round Guard",
+        stance="orthodox",
+        height_ft=5,
+        height_in=11,
+        weight_lbs=154,
+    )
+    state = CareerState(boxer=boxer)
+    opponent = generate_opponent(state, rng=rng)
+
+    with pytest.raises(ValueError, match="Rounds must be >= 1"):
+        simulate_amateur_fight(state.boxer, opponent, rounds=0, rng=rng)

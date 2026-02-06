@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import random
+from dataclasses import dataclass
 
 from boxing_game.constants import STARTING_AGE
 from boxing_game.models import (
@@ -52,6 +53,24 @@ LAST_NAMES = [
 ]
 
 STANCE_CHOICES = ["orthodox", "southpaw"]
+
+
+@dataclass(frozen=True)
+class ProReadinessStatus:
+    current_age: int
+    current_fights: int
+    current_points: int
+    min_age: int
+    min_fights: int
+    min_points: int
+
+    @property
+    def is_ready(self) -> bool:
+        return (
+            self.current_age >= self.min_age
+            and self.current_fights >= self.min_fights
+            and self.current_points >= self.min_points
+        )
 
 
 def _clamp_stat(value: int) -> int:
@@ -180,11 +199,18 @@ def apply_fight_result(
     )["name"]
 
 
-def pro_ready(state: CareerState) -> bool:
+def pro_readiness_status(state: CareerState) -> ProReadinessStatus:
     readiness = load_rule_set("amateur_progression")["pro_readiness"]
     min_age = int(readiness.get("min_age", STARTING_AGE))
-    return (
-        state.boxer.profile.age >= min_age
-        and state.amateur_progress.fights_taken >= int(readiness["min_fights"])
-        and state.boxer.amateur_points >= int(readiness["min_points"])
+    return ProReadinessStatus(
+        current_age=state.boxer.profile.age,
+        current_fights=state.amateur_progress.fights_taken,
+        current_points=state.boxer.amateur_points,
+        min_age=min_age,
+        min_fights=int(readiness["min_fights"]),
+        min_points=int(readiness["min_points"]),
     )
+
+
+def pro_ready(state: CareerState) -> bool:
+    return pro_readiness_status(state).is_ready

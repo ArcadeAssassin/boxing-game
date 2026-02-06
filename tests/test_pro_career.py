@@ -4,7 +4,7 @@ import pytest
 
 from boxing_game.constants import STARTING_AGE
 from boxing_game.models import CareerState
-from boxing_game.modules.amateur_circuit import pro_ready
+from boxing_game.modules.amateur_circuit import pro_readiness_status, pro_ready
 from boxing_game.modules.career_clock import advance_month
 from boxing_game.modules.fight_sim_engine import simulate_pro_fight
 from boxing_game.modules.player_profile import create_boxer
@@ -13,8 +13,10 @@ from boxing_game.modules.pro_career import (
     ensure_rankings,
     generate_pro_opponent,
     offer_purse,
+    rankings_snapshot,
     turn_pro,
 )
+from boxing_game.modules.rating_engine import boxer_overall_rating
 from boxing_game.rules_registry import load_rule_set
 
 
@@ -123,6 +125,23 @@ def test_pro_ready_requires_min_age_even_if_points_and_fights_met() -> None:
     assert pro_ready(state) is False
 
 
+def test_pro_readiness_status_reports_progress() -> None:
+    state = _build_pro_ready_state()
+    state.boxer.profile.age = STARTING_AGE + 2
+    state.amateur_progress.fights_taken = 12
+    state.boxer.amateur_points = 111
+
+    status = pro_readiness_status(state)
+
+    assert status.current_age == STARTING_AGE + 2
+    assert status.current_fights == 12
+    assert status.current_points == 111
+    assert status.min_age == 19
+    assert status.min_fights == 18
+    assert status.min_points == 170
+    assert status.is_ready is False
+
+
 def test_ensure_rankings_backfills_missing_organizations() -> None:
     state = _build_pro_ready_state()
     turn_pro(state, rng=random.Random(3))
@@ -150,3 +169,34 @@ def test_purse_breakdown_has_total_expenses() -> None:
         + purse["sanction_fee"]
     )
     assert purse["total_expenses"] == pytest.approx(summed, rel=0.0, abs=0.02)
+
+
+def test_boxer_overall_rating_stays_in_bounds() -> None:
+    state = _build_pro_ready_state()
+    rating = boxer_overall_rating(state.boxer, stage="amateur")
+    assert 20 <= rating <= 99
+
+
+def test_rankings_snapshot_requires_pro_state() -> None:
+    boxer = create_boxer(
+        name="No Pro",
+        stance="orthodox",
+        height_ft=5,
+        height_in=11,
+        weight_lbs=160,
+    )
+    state = CareerState(boxer=boxer)
+    with pytest.raises(ValueError, match="available after turning pro"):
+        rankings_snapshot(state, "WBC")
+
+
+def test_rankings_snapshot_contains_player_row() -> None:
+    state = _build_pro_ready_state()
+    turn_pro(state, rng=random.Random(31))
+    state.pro_career.rankings["WBC"] = 28
+
+    rows = rankings_snapshot(state, "WBC", top_n=15)
+    player_rows = [row for row in rows if row.is_player]
+
+    assert len(player_rows) == 1
+    assert player_rows[0].name == state.boxer.profile.name

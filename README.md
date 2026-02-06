@@ -31,6 +31,7 @@ python3 -m boxing_game.gui
 - Turn pro after readiness milestones
 - Pro fight scheduling with purse offers, deductions, balance, and earnings
 - Organization-focused ranking progression (WBC/WBA/IBF/WBO)
+- Dedicated GUI rankings page with organization selector and top-board view
 - Round-based amateur fight simulation with judges and stoppages
 - Round-based pro fight simulation with separate pro model
 - Training and fatigue loop
@@ -46,6 +47,7 @@ python3 -m boxing_game.gui
 - `boxing_game/modules/fight_sim_engine.py`: fight simulation
 - `boxing_game/modules/amateur_circuit.py`: opponent generation and progression
 - `boxing_game/modules/pro_career.py`: pro transition, pro opponents, rankings, finances
+- `boxing_game/modules/rating_engine.py`: weighted overall boxer rating
 - `boxing_game/modules/career_clock.py`: calendar and age progression
 - `boxing_game/modules/savegame.py`: persistence
 - `boxing_game/rules_registry.py`: rule-file loading
@@ -79,9 +81,14 @@ Current readiness gate (from `rules/amateur_progression.json`):
 - Pro ranking limits now use each organization's configured `ranking_slots` (no hardcoded rank ceiling).
 - Purse offers now include `total_expenses` and shared formatted breakdown output.
 - Save files now include version checks with compatibility guardrails.
+- Save writes are now atomic and load errors are normalized with clear save-specific messages.
 - Boxer creation now validates non-empty names.
+- CLI/GUI now surface detailed pro-readiness progress (age, fights, points).
+- Fight simulation now validates round count input (`rounds >= 1`).
+- Boxer profile now shows an overall rating derived from weighted fight attributes.
+- Added deterministic rankings snapshot generation used by the GUI rankings page.
 - Added `.gitignore` for Python/runtime artifacts.
-- Expanded automated tests for pro flow, save compatibility, validation, and aging edge cases.
+- Expanded automated tests for pro flow, save compatibility, validation, aging edge cases, and readiness reporting.
 
 Detailed audit and implementation notes are in `CHANGES_2026-02-06.md`.
 

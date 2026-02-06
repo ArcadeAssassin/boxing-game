@@ -8,7 +8,7 @@ from boxing_game.modules.amateur_circuit import (
     apply_fight_result,
     current_tier,
     generate_opponent,
-    pro_ready,
+    pro_readiness_status,
 )
 from boxing_game.modules.attribute_engine import training_gain
 from boxing_game.modules.career_clock import advance_month
@@ -23,6 +23,7 @@ from boxing_game.modules.pro_career import (
     pro_tier,
     turn_pro,
 )
+from boxing_game.modules.rating_engine import boxer_overall_rating
 from boxing_game.modules.savegame import SavegameError, list_saves, load_state, save_state
 from boxing_game.rules_registry import load_rule_set
 
@@ -57,6 +58,8 @@ def _advance_month(state: CareerState, months: int = 1) -> None:
 
 def _render_stats(state: CareerState) -> None:
     boxer = state.boxer
+    stage = "pro" if state.pro_career.is_active else "amateur"
+    overall_rating = boxer_overall_rating(boxer, stage=stage)
     print("\n== Boxer Profile ==")
     print(f"Name: {boxer.profile.name} ({boxer.profile.stance})")
     print(f"Age: {boxer.profile.age}")
@@ -64,6 +67,7 @@ def _render_stats(state: CareerState) -> None:
         f"Height/Weight: {boxer.profile.height_ft}'{boxer.profile.height_in}\" / {boxer.profile.weight_lbs} lbs"
     )
     print(f"Division: {boxer.division}")
+    print(f"Overall Rating: {overall_rating}")
 
     if state.pro_career.is_active:
         pro_record = state.pro_career.record
@@ -315,8 +319,17 @@ def _career_loop(state: CareerState) -> None:
             f"Age {state.boxer.profile.age} | Tier: {tier_label} | Record: {record_label} ==="
         )
 
-        if not state.pro_career.is_active and pro_ready(state):
-            print("Pro-ready milestone reached. You can turn pro now.")
+        if not state.pro_career.is_active:
+            readiness = pro_readiness_status(state)
+            if readiness.is_ready:
+                print("Pro-ready milestone reached. You can turn pro now.")
+            else:
+                print(
+                    "Pro progress: "
+                    f"Age {readiness.current_age}/{readiness.min_age} | "
+                    f"Fights {readiness.current_fights}/{readiness.min_fights} | "
+                    f"Points {readiness.current_points}/{readiness.min_points}"
+                )
 
         if state.pro_career.is_active:
             print("1. View boxer")

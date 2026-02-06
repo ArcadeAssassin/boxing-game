@@ -47,7 +47,7 @@ from boxing_game.modules.amateur_circuit import (
     apply_fight_result,
     current_tier,
     generate_opponent,
-    pro_ready,
+    pro_readiness_status,
 )
 from boxing_game.modules.attribute_engine import training_gain
 from boxing_game.modules.career_clock import advance_month
@@ -60,8 +60,10 @@ from boxing_game.modules.pro_career import (
     generate_pro_opponent,
     offer_purse,
     pro_tier,
+    rankings_snapshot,
     turn_pro,
 )
+from boxing_game.modules.rating_engine import boxer_overall_rating
 from boxing_game.modules.savegame import SavegameError, list_saves, load_state, save_state
 from boxing_game.rules_registry import load_rule_set
 
@@ -81,10 +83,12 @@ class BoxingGameWindow(QMainWindow):
         self.menu_page = self._build_menu_page()
         self.create_page = self._build_create_page()
         self.career_page = self._build_career_page()
+        self.rankings_page = self._build_rankings_page()
 
         self.stack.addWidget(self.menu_page)
         self.stack.addWidget(self.create_page)
         self.stack.addWidget(self.career_page)
+        self.stack.addWidget(self.rankings_page)
         self.stack.setCurrentWidget(self.menu_page)
 
     def _build_menu_page(self) -> QWidget:
@@ -227,6 +231,8 @@ class BoxingGameWindow(QMainWindow):
         self.turn_pro_button.clicked.connect(self._turn_pro)
         self.pro_fight_button = QPushButton("Pro Fight")
         self.pro_fight_button.clicked.connect(self._take_pro_fight)
+        rankings_button = QPushButton("Rankings")
+        rankings_button.clicked.connect(self._show_rankings_page)
         rest_button = QPushButton("Rest Month")
         rest_button.clicked.connect(self._rest_month)
         save_button = QPushButton("Save")
@@ -239,6 +245,7 @@ class BoxingGameWindow(QMainWindow):
             self.amateur_fight_button,
             self.turn_pro_button,
             self.pro_fight_button,
+            rankings_button,
             rest_button,
             save_button,
             back_button,
@@ -256,6 +263,46 @@ class BoxingGameWindow(QMainWindow):
 
         return page
 
+    def _build_rankings_page(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(24, 18, 24, 18)
+        layout.setSpacing(12)
+
+        self.rankings_header = QLabel("Rankings")
+        self.rankings_header.setStyleSheet("font-size: 24px; font-weight: 700;")
+        self.rankings_subtitle = QLabel("")
+        self.rankings_subtitle.setWordWrap(True)
+        self.rankings_subtitle.setStyleSheet("font-size: 13px; color: #4f5d75;")
+
+        layout.addWidget(self.rankings_header)
+        layout.addWidget(self.rankings_subtitle)
+
+        controls = QHBoxLayout()
+        controls.setSpacing(8)
+        self.rankings_org_combo = QComboBox()
+        self.rankings_org_combo.addItems(["WBC", "WBA", "IBF", "WBO"])
+        self.rankings_org_combo.currentTextChanged.connect(self._refresh_rankings_page)
+
+        refresh_button = QPushButton("Refresh")
+        refresh_button.clicked.connect(self._refresh_rankings_page)
+
+        back_button = QPushButton("Back to Career")
+        back_button.clicked.connect(self._show_career_page)
+
+        controls.addWidget(QLabel("Organization"))
+        controls.addWidget(self.rankings_org_combo)
+        controls.addWidget(refresh_button)
+        controls.addStretch(1)
+        controls.addWidget(back_button)
+        layout.addLayout(controls)
+
+        self.rankings_view = QPlainTextEdit()
+        self.rankings_view.setReadOnly(True)
+        self.rankings_view.setPlaceholderText("Rankings will appear here.")
+        layout.addWidget(self.rankings_view, 1)
+        return page
+
     def _show_menu_page(self) -> None:
         self.stack.setCurrentWidget(self.menu_page)
 
@@ -267,6 +314,12 @@ class BoxingGameWindow(QMainWindow):
             return
         self._refresh_career_view()
         self.stack.setCurrentWidget(self.career_page)
+
+    def _show_rankings_page(self) -> None:
+        if self.state is None:
+            return
+        self._refresh_rankings_page()
+        self.stack.setCurrentWidget(self.rankings_page)
 
     def _set_state(self, state: CareerState) -> None:
         self.state = state
@@ -281,6 +334,47 @@ class BoxingGameWindow(QMainWindow):
 
     def _append_log(self, message: str) -> None:
         self.event_log.appendPlainText(message)
+
+    def _refresh_rankings_page(self, *_: object) -> None:
+        if self.state is None:
+            return
+
+        boxer = self.state.boxer
+        self.rankings_header.setText(f"Rankings | {boxer.profile.name}")
+
+        if not self.state.pro_career.is_active:
+            readiness = pro_readiness_status(self.state)
+            self.rankings_subtitle.setText("Turn pro to unlock sanctioning-body rankings.")
+            self.rankings_view.setPlainText(
+                (
+                    "Not ranked yet.\n\n"
+                    "Pro gate:\n"
+                    f"Age {readiness.current_age}/{readiness.min_age}\n"
+                    f"Fights {readiness.current_fights}/{readiness.min_fights}\n"
+                    f"Points {readiness.current_points}/{readiness.min_points}\n"
+                )
+            )
+            return
+
+        ensure_rankings(self.state)
+        org_name = self.rankings_org_combo.currentText().strip().upper()
+        entries = rankings_snapshot(self.state, org_name, top_n=15)
+
+        self.rankings_subtitle.setText(
+            f"Division: {boxer.division} | Focus Organization: {self.state.pro_career.organization_focus}"
+        )
+
+        lines = [f"{org_name} Rankings", ""]
+        for entry in entries:
+            rank_label = f"#{entry.rank}" if entry.rank > 0 else "NR"
+            marker = " <= YOU" if entry.is_player else ""
+            lines.append(
+                (
+                    f"{rank_label:>4} | OVR {entry.rating:>2} | "
+                    f"{entry.name} | {entry.wins}-{entry.losses}-{entry.draws}{marker}"
+                )
+            )
+        self.rankings_view.setPlainText("\n".join(lines))
 
     def _create_career(self) -> None:
         name = self.name_input.text().strip()
@@ -549,6 +643,8 @@ class BoxingGameWindow(QMainWindow):
 
         boxer = self.state.boxer
         is_pro = self.state.pro_career.is_active
+        stage = "pro" if is_pro else "amateur"
+        overall_rating = boxer_overall_rating(boxer, stage=stage)
         amateur_record = boxer.record
         pro_record = self.state.pro_career.record
 
@@ -566,9 +662,10 @@ class BoxingGameWindow(QMainWindow):
                 f"(KO {amateur_record.kos})"
             )
 
-        pro_ready_flag = "Yes" if pro_ready(self.state) else "No"
+        readiness = pro_readiness_status(self.state)
+        pro_ready_flag = "Yes" if readiness.is_ready else "No"
         self.amateur_fight_button.setEnabled(not is_pro)
-        self.turn_pro_button.setEnabled((not is_pro) and pro_ready(self.state))
+        self.turn_pro_button.setEnabled((not is_pro) and readiness.is_ready)
         self.pro_fight_button.setEnabled(is_pro)
 
         self.career_header.setText(
@@ -583,7 +680,10 @@ class BoxingGameWindow(QMainWindow):
         self.career_status.setText(
             (
                 f"Amateur Points: {boxer.amateur_points} | Popularity: {boxer.popularity} | "
-                f"Fatigue: {boxer.fatigue} | Pro Ready: {pro_ready_flag}"
+                f"Fatigue: {boxer.fatigue} | Pro Ready: {pro_ready_flag} | "
+                f"Gate Age {readiness.current_age}/{readiness.min_age}, "
+                f"Fights {readiness.current_fights}/{readiness.min_fights}, "
+                f"Points {readiness.current_points}/{readiness.min_points}"
             )
         )
 
@@ -596,6 +696,7 @@ class BoxingGameWindow(QMainWindow):
                 f"{boxer.profile.height_ft}'{boxer.profile.height_in}\" / {boxer.profile.weight_lbs} lbs"
             ),
             f"Reach: {boxer.profile.reach_in} in",
+            f"Overall Rating: {overall_rating}",
             "",
             (
                 "Amateur Record: "

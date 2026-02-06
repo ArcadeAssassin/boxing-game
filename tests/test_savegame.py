@@ -59,3 +59,22 @@ def test_load_legacy_save_backfills_age_from_calendar(tmp_path: Path) -> None:
 
     assert loaded.career_months == 36
     assert loaded.boxer.profile.age == STARTING_AGE + 3
+
+
+def test_load_rejects_invalid_json(tmp_path: Path) -> None:
+    path = tmp_path / "broken_slot.json"
+    path.write_text("{not-json", encoding="utf-8")
+
+    with pytest.raises(SavegameError, match="not valid JSON"):
+        load_state("broken_slot", save_dir=tmp_path)
+
+
+def test_load_rejects_invalid_career_payload(tmp_path: Path) -> None:
+    path = tmp_path / "bad_career_slot.json"
+    path.write_text(
+        json.dumps({"version": 2, "career": {"month": 1}}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(SavegameError, match="career payload is invalid"):
+        load_state("bad_career_slot", save_dir=tmp_path)

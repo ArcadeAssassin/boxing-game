@@ -30,9 +30,14 @@ def _simulate_with_model(
 ) -> FightResult:
     randomizer = rng or random.Random()
 
-    model = load_rule_set("fight_model")[model_key]
+    models = load_rule_set("fight_model")
+    if model_key not in models:
+        raise ValueError(f"Unknown fight model: {model_key}")
+    model = models[model_key]
     style_weights = model["style_weights"]
-    scheduled_rounds = int(rounds or model["rounds"])
+    scheduled_rounds = int(model["rounds"]) if rounds is None else int(rounds)
+    if scheduled_rounds < 1:
+        raise ValueError("Rounds must be >= 1.")
     swing_factor = float(model["swing_factor"])
     judge_noise = float(model["judge_noise"])
     base_ko_chance = float(model["base_ko_chance"])

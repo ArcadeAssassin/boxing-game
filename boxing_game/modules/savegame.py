@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 
 from boxing_game.models import CareerState
 
@@ -42,8 +44,26 @@ def save_state(state: CareerState, slot: str, save_dir: Path | None = None) -> P
         "saved_at": datetime.now(timezone.utc).isoformat(),
         "career": state.to_dict(),
     }
-    with target_path.open("w", encoding="utf-8") as handle:
-        json.dump(payload, handle, indent=2)
+    temp_path: Path | None = None
+    try:
+        with NamedTemporaryFile(
+            "w",
+            encoding="utf-8",
+            dir=target_path.parent,
+            prefix=f"{normalized_slot}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temp_path = Path(handle.name)
+            json.dump(payload, handle, indent=2)
+            handle.flush()
+            os.fsync(handle.fileno())
+        temp_path.replace(target_path)
+    except OSError as exc:
+        raise SavegameError(f"Failed to write save file: {exc}") from exc
+    finally:
+        if temp_path is not None and temp_path.exists():
+            temp_path.unlink(missing_ok=True)
     return target_path
 
 
@@ -53,13 +73,21 @@ def load_state(slot: str, save_dir: Path | None = None) -> CareerState:
     if not source_path.exists():
         raise SavegameError(f"Save slot not found: {normalized_slot}")
 
-    with source_path.open("r", encoding="utf-8") as handle:
-        payload = json.load(handle)
+    try:
+        with source_path.open("r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except json.JSONDecodeError as exc:
+        raise SavegameError("Save file is not valid JSON.") from exc
+    except OSError as exc:
+        raise SavegameError(f"Failed to read save file: {exc}") from exc
 
     if not isinstance(payload, dict):
         raise SavegameError("Save file is invalid.")
 
-    version = int(payload.get("version", 1))
+    try:
+        version = int(payload.get("version", 1))
+    except (TypeError, ValueError) as exc:
+        raise SavegameError("Save file version is invalid.") from exc
     if version > CURRENT_SAVE_VERSION:
         raise SavegameError(
             f"Save version {version} is newer than supported version {CURRENT_SAVE_VERSION}."
@@ -67,8 +95,13 @@ def load_state(slot: str, save_dir: Path | None = None) -> CareerState:
 
     if "career" not in payload:
         raise SavegameError("Save file missing career payload.")
+    if not isinstance(payload["career"], dict):
+        raise SavegameError("Save file career payload is invalid.")
 
-    return CareerState.from_dict(payload["career"])
+    try:
+        return CareerState.from_dict(payload["career"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise SavegameError("Save file career payload is invalid.") from exc
 
 
 def list_saves(save_dir: Path | None = None) -> list[str]:
